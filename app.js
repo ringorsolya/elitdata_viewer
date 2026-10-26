@@ -1130,17 +1130,21 @@ async function karrierSzerk(karrierid, d, utana) {
 function masCsoportok(lista) {
   return (lista || []).map(m => `<span class="badge ${m.ellenorzes === 'ellenőrizve' ? 'b-ok' : m.ellenorzes === 'kérdéses' ? 'b-bad' : 'b-gray'}" title="${esc(m.ellenorzes ? `${m.ellenorzes}: ${m.ellenorizte || ''}${m.ido ? ', ' + new Date(m.ido).toLocaleDateString('hu-HU') : ''}` : 'még nincs ellenőrizve')}">${esc(m.nev)}${m.ellenorzes === 'ellenőrizve' ? ' ✓' : ''}</span>`).join(' ') || '<span class="muted">—</span>';
 }
+// a szerver egy kérésre legfeljebb 1000 sort ad: lapozva kérjük le az összeset
+async function mindLeker(keres) {
+  const out = [];
+  for (let i = 0; ; i += 1000) { const { data } = await q(keres().range(i, i + 999)); out.push(...data); if (data.length < 1000) break; }
+  return out;
+}
 const ELL_BADGE = { 'ellenőrizve': '<span class="badge b-ok">ellenőrizve</span>', 'kérdéses': '<span class="badge b-bad">kérdéses</span>' };
 async function csoportokLap() {
   location.hash = '';
   app.innerHTML = '<div class="empty">Betöltés…</div>';
   try {
-    const [{ data: cs }, { data: tg }] = await Promise.all([
-      q(sb.from('tbl_csoportok').select('*').order('nev')),
-      q(sb.from('tbl_csoport_tagok').select('csoport_id,ellenorzes').not('elfogadott', 'is', false).range(0, 9999)),
-    ]);
+    const { data: csAll } = await q(sb.from('v_csoport_osszesito').select('*').order('nev'));
+    const cs = csAll.filter(c => c.tagok > 0);
     const k = await kodok();
-    const st = id => { const t = tg.filter(x => x.csoport_id === id); return { n: t.length, ok: t.filter(x => x.ellenorzes === 'ellenőrizve').length, kerd: t.filter(x => x.ellenorzes === 'kérdéses').length }; };
+    const st = id => { const c = cs.find(x => x.csoport_id === id); return { n: c.tagok, ok: c.ellenorizve, kerd: c.kerdeses }; };
     app.innerHTML = `<h2>Csoportok</h2>
       <p class="muted">Egy foglalkozáscsoport (pl. az orvosok) egyben történő ellenőrzése és javítása: a tagok listája ellenőrzési jelöléssel, a csoport összes karrierállomása egy táblában, és lépkedés a tagok adatlapjai között.</p>
       <div class="csop-racs">${cs.map(c => { const x = st(c.csoport_id), pct = x.n ? Math.round(100 * x.ok / x.n) : 0; return `<div class="card click csop-kartya" data-cs="${c.csoport_id}">
@@ -1166,7 +1170,7 @@ async function csoportLap(csId, nezet = 'tagok') {
   app.innerHTML = '<div class="empty">Betöltés…</div>';
   try {
     const { data: c } = await q(sb.from('tbl_csoportok').select('*').eq('csoport_id', csId).single());
-    const { data: tagok } = await q(sb.from('v_csoport_tagok').select('*').eq('csoport_id', csId).order('nev').range(0, 9999));
+    const tagok = await mindLeker(() => sb.from('v_csoport_tagok').select('*').eq('csoport_id', csId).order('nev').order('szemelyid'));
     S.csoportNav = { cs: csId, nev: c.nev, ids: tagok.map(t => t.szemelyid), nezet };
     const ok = tagok.filter(t => t.ellenorzes === 'ellenőrizve').length, pct = tagok.length ? Math.round(100 * ok / tagok.length) : 0;
     const { count: alDb } = await q(sb.from('tbl_csoport_allomasok').select('karrierid', { count: 'exact', head: true }).eq('csoport_id', csId));
