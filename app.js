@@ -213,7 +213,7 @@ async function szabalyReszlet(id, d, utana) {
   const col = s.oszlop + '_beirt';
   const { data: sorok, count } = await q(sb.from('tbl_karrier_harmonizalas')
     .select('harm_id,szemelyid,fajl_nev,fajl_foglalkozas,fajl_elsoev,fajl_utolsoev,harmonizalt_beirt,hivatas1_beirt,hivatas2_beirt,specifikacio_beirt,megjegyzes,forras_id', { count: 'exact' })
-    .eq(col, s.beirt_ertek).order('fajl_nev').limit(300));
+    .ilike(col, s.beirt_ertek.replace(/[\\%_]/g, m => '\\' + m)).order('fajl_nev').limit(300));
   const k = await kodok();
   // személyenként összevonva
   const szem = new Map();
@@ -1425,7 +1425,7 @@ async function harmLap() {
 async function szabalyokLap() {
   app.innerHTML = `<h2>Szabályok</h2>
     <p class="muted">Értékszintű döntések: egy beírt értékre vonatkozó döntés minden érintett sorra érvényes. Itt a már elfogadott szabályok is láthatók és módosíthatók.</p>
-    <div class="toolbar"><select id="sz-a"><option value="">Minden állapot</option><option>nyitott</option><option>javaslat</option><option>elfogadva</option><option>elutasítva</option></select>
+    <div class="toolbar"><select id="sz-a"><option value="">Minden állapot</option><option>nyitott</option><option>javaslat</option><option>elfogadva</option><option>elutasítva</option><option>összevonva</option></select>
       <select id="sz-o"><option value="">Minden mező</option><option value="harmonizalt">Harmonizált foglalkozás</option><option value="hivatas1">Hivatás1</option><option value="hivatas2">Hivatás2</option></select>
       <input type="search" id="sz-k" placeholder="Beírt érték…"></div>
     <div class="grid2"><div><div class="tbl-wrap" id="r-list"></div><div id="r-pager"></div></div><div class="sticky" id="ny-detail"><div class="card empty">Válassz egy szabályt.</div></div></div>`;
