@@ -53,7 +53,14 @@ const SZEMELYMEZO = {
 const REJTETT_MEZO = new Set(['elittage', 'eredetiazon1', 'eredetiazon2', 'adatforraslap', 'rogzitesdatuma']);
 function msg(el, text, kind = 'info') { el.innerHTML = `<div class="msg ${kind}">${esc(text)}</div>`; }
 async function q(promise) { const { data, error, count } = await promise; if (error) throw error; return { data, count }; }
-function hibaKiir(el, e) { console.error(e); msg(el, 'Hiba: ' + (e.message || e), 'err'); }
+function hibaSzoveg(e) {
+  if (!e) return 'ismeretlen hiba';
+  if (typeof e === 'string') return e;
+  const t = e.message || e.details || e.hint || e.error_description || '';
+  if (/statement timeout|canceling statement/i.test(t) || e.code === '57014') return 'a lekérdezés túl sokáig tartott (időtúllépés) – próbáld újra, ha tartósan fennáll, szólj.';
+  return t || JSON.stringify(e);
+}
+function hibaKiir(el, e) { console.error(e); msg(el, 'Hiba: ' + hibaSzoveg(e), 'err'); }
 function pager(total, page, onGo) {
   const pages = Math.max(1, Math.ceil(total / PAGE));
   const d = document.createElement('div'); d.className = 'pager';
@@ -917,7 +924,7 @@ async function szakaszSzerk(P, id, k) {
       t.closest('.sor-kartya').remove();
     } else if (t.dataset.sv) {
       if (!confirm('Visszavonod ezt a javítást?')) return;
-      try { await q(sb.rpc('sorjavitas_visszavon', { p_javitas_id: Number(t.dataset.sv) })); szemelyLap(id).then(() => $('#sz-' + k)?.scrollIntoView()); } catch (err) { alert('Hiba: ' + (err.message || err)); }
+      try { await q(sb.rpc('sorjavitas_visszavon', { p_javitas_id: Number(t.dataset.sv) })); szemelyLap(id).then(() => $('#sz-' + k)?.scrollIntoView()); } catch (err) { alert('Hiba: ' + hibaSzoveg(err)); }
     }
   });
   f.addEventListener('change', e => { const c = e.target.closest('.sor-kartya'); if (c && e.target.dataset.torles !== undefined) c.classList.toggle('torolve', e.target.checked); });
@@ -1022,12 +1029,12 @@ async function szemelyLap(id) {
     app.querySelectorAll('[data-szakasz]').forEach(b => b.addEventListener('click', () => szakaszSzerk(P, id, b.dataset.szakasz)));
     app.querySelectorAll('[data-visszavon]').forEach(b => b.addEventListener('click', async () => {
       if (!confirm('Biztosan visszavonod ezt a javítást? Az eredeti érték lesz ismét érvényes.')) return;
-      try { await q(sb.rpc('javitas_visszavon', { p_allitas_id: Number(b.dataset.visszavon) })); szemelyLap(id); } catch (err) { alert('Hiba: ' + (err.message || err)); }
+      try { await q(sb.rpc('javitas_visszavon', { p_allitas_id: Number(b.dataset.visszavon) })); szemelyLap(id); } catch (err) { alert('Hiba: ' + hibaSzoveg(err)); }
     }));
     app.querySelectorAll('[data-ugro]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); $('#sz-' + a.dataset.ugro).scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
     app.querySelectorAll('[data-csop]').forEach(cb => cb.addEventListener('change', async () => {
       try { await q(sb.rpc('csoport_tag', { p_csoport_id: Number(cb.dataset.csop), p_szemelyid: id, p_be: cb.checked })); }
-      catch (err) { cb.checked = !cb.checked; alert('Hiba: ' + (err.message || err)); }
+      catch (err) { cb.checked = !cb.checked; alert('Hiba: ' + hibaSzoveg(err)); }
     }));
     $('#kar-tbl tbody')?.addEventListener('click', e => {
       const kb = e.target.closest('[data-kj]');
@@ -1094,7 +1101,7 @@ async function karrierSzerk(karrierid, d, utana) {
   szemLinkek(d);
   d.querySelectorAll('[data-sv]').forEach(b => b.addEventListener('click', async () => {
     if (!confirm('Biztosan visszavonod ezt a javítást?')) return;
-    try { await q(sb.rpc('sorjavitas_visszavon', { p_javitas_id: Number(b.dataset.sv) })); karrierSzerk(karrierid, d, utana); } catch (err) { alert('Hiba: ' + (err.message || err)); }
+    try { await q(sb.rpc('sorjavitas_visszavon', { p_javitas_id: Number(b.dataset.sv) })); karrierSzerk(karrierid, d, utana); } catch (err) { alert('Hiba: ' + hibaSzoveg(err)); }
   }));
   if (!szerk) return;
   d.querySelectorAll('[data-jel]').forEach(b => b.addEventListener('click', () => { const [x, y] = b.dataset.jel.split('-'); $('#kf-elsoev').value = x; $('#kf-utolsoev').value = y; }));
@@ -1211,7 +1218,7 @@ function csoportTagok(c, tagok) {
       if (kb) {
         e.stopPropagation();
         if (!confirm('Kiveszed ezt a személyt a csoportból? (A tagság visszavonásként rögzül, később visszavehető.)')) return;
-        try { await q(sb.rpc('csoport_tag', { p_csoport_id: c.csoport_id, p_szemelyid: Number(kb.dataset.kivesz), p_be: false })); csoportLap(c.csoport_id, 'tagok'); } catch (err) { alert('Hiba: ' + (err.message || err)); }
+        try { await q(sb.rpc('csoport_tag', { p_csoport_id: c.csoport_id, p_szemelyid: Number(kb.dataset.kivesz), p_be: false })); csoportLap(c.csoport_id, 'tagok'); } catch (err) { alert('Hiba: ' + hibaSzoveg(err)); }
         return;
       }
       const tr = e.target.closest('tr[data-id]'); if (tr) szemelyLap(Number(tr.dataset.id));
@@ -1220,7 +1227,7 @@ function csoportTagok(c, tagok) {
   $('#ct-q').addEventListener('input', e => { st.q = e.target.value.trim(); lista(); });
   $('#ct-f').addEventListener('change', e => { st.f = e.target.value; lista(); });
   $('#ct-frissit')?.addEventListener('click', async () => {
-    try { const { data } = await q(sb.rpc('csoport_frissit', { p_csoport_id: c.csoport_id })); alert(`${data} új tag került be.`); csoportLap(c.csoport_id, 'tagok'); } catch (err) { alert('Hiba: ' + (err.message || err)); }
+    try { const { data } = await q(sb.rpc('csoport_frissit', { p_csoport_id: c.csoport_id })); alert(`${data} új tag került be.`); csoportLap(c.csoport_id, 'tagok'); } catch (err) { alert('Hiba: ' + hibaSzoveg(err)); }
   });
   $('#ct-un')?.addEventListener('input', debounce(async e => {
     const t = tiszta(e.target.value); const box2 = $('#ct-talalat');
@@ -1231,7 +1238,7 @@ function csoportTagok(c, tagok) {
     const { data } = await q(qq.limit(10));
     box2.innerHTML = (data || []).map(r => `<button type="button" class="btn small" data-felvesz="${r.szemelyid}" style="margin:2px">${esc(r.vezeteknev + ' ' + r.keresztnev)} (${dash(r.szuletesiev)})${S.csoportNav.ids.includes(r.szemelyid) ? ' – már tag' : ''}</button>`).join('') || '<span class="muted small">Nincs találat.</span>';
     box2.querySelectorAll('[data-felvesz]').forEach(b => b.addEventListener('click', async () => {
-      try { await q(sb.rpc('csoport_tag', { p_csoport_id: c.csoport_id, p_szemelyid: Number(b.dataset.felvesz), p_be: true })); csoportLap(c.csoport_id, 'tagok'); } catch (err) { alert('Hiba: ' + (err.message || err)); }
+      try { await q(sb.rpc('csoport_tag', { p_csoport_id: c.csoport_id, p_szemelyid: Number(b.dataset.felvesz), p_be: true })); csoportLap(c.csoport_id, 'tagok'); } catch (err) { alert('Hiba: ' + hibaSzoveg(err)); }
     }));
   }));
   lista();
@@ -1345,7 +1352,7 @@ async function csoportSavKezel(id) {
   $('#cs-kov')?.addEventListener('click', () => megy(i + 1));
   const jelol = async (allapot, tovabb) => {
     try { await q(sb.rpc('csoport_ellenoriz', { p_csoport_id: N.cs, p_szemelyid: id, p_allapot: allapot, p_megjegyzes: $('#cs-megj').value || null })); tovabb && i < N.ids.length - 1 ? megy(i + 1) : szemelyLap(id); }
-    catch (err) { alert('Hiba: ' + (err.message || err)); }
+    catch (err) { alert('Hiba: ' + hibaSzoveg(err)); }
   };
   $('#cs-ok')?.addEventListener('click', () => jelol('ellenőrizve', true));
   $('#cs-kerd')?.addEventListener('click', () => jelol('kérdéses', false));
@@ -1368,7 +1375,7 @@ async function munkatarsakLap() {
         <p class="muted small">A belépéshez a Supabase-ben is létre kell hozni a felhasználót (Authentication → Users → Add user), ugyanezzel az e-mail-címmel.</p></form>
 `;
     app.querySelectorAll('[data-aktiv]').forEach(cb => cb.addEventListener('change', async () => {
-      try { await q(sb.rpc('munkatars_beallit', { p_email: cb.dataset.aktiv, p_nev: null, p_aktiv: cb.checked })); } catch (err) { cb.checked = !cb.checked; alert('Hiba: ' + (err.message || err)); }
+      try { await q(sb.rpc('munkatars_beallit', { p_email: cb.dataset.aktiv, p_nev: null, p_aktiv: cb.checked })); } catch (err) { cb.checked = !cb.checked; alert('Hiba: ' + hibaSzoveg(err)); }
     }));
     $('#mt-f').addEventListener('submit', async e => {
       e.preventDefault();
