@@ -121,7 +121,7 @@ async function belepve(session) {
     S.donto = !!donto;
     const { data: m } = await q(sb.from('tbl_munkatarsak').select('nev,szerep').eq('email', S.user.email.toLowerCase()).maybeSingle());
     S.szerep = m ? m.szerep : null;
-    $('#userinfo').innerHTML = `${esc(m && m.nev ? m.nev : S.user.email)} <span class="badge b-gray">${esc(S.szerep || '')}</span>`;
+    $('#userinfo').textContent = m && m.nev ? m.nev : S.user.email;
     $('#top').classList.remove('hidden'); app.classList.remove('hidden');
     const h = location.hash.replace('#', '');
     if (h.startsWith('szemely=')) { valt('szemelyek', false); szemelyLap(Number(h.split('=')[1])); }
@@ -242,7 +242,7 @@ async function szabalyReszlet(id, d, utana) {
       <label>Megjegyzés (indoklás)<textarea id="szm" placeholder="Miért így döntöttünk?"></textarea></label>
       <button class="btn primary" type="submit">Döntés rögzítése</button>
       <div id="szmsg"></div>
-    </form>` : '<p class="muted small">Döntést csak döntési joggal rendelkező munkatárs rögzíthet.</p>'}
+    </form>` : ''}
     <h3>Érintett személyek</h3>
     <div class="tbl-wrap"><table><thead><tr><th>Név</th><th>Sorok</th><th>Hivatás1 / Hivatás2</th><th>Eredeti foglalkozások</th></tr></thead><tbody>${
       [...szem.values()].map(r => `<tr><td>${r.szemelyid ? `<a href="#szemely=${r.szemelyid}" data-szem="${r.szemelyid}">${esc(r.fajl_nev)}</a>` : esc(r.fajl_nev)}</td><td>${r.sorok}</td>
