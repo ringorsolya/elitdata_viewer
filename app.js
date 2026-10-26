@@ -648,7 +648,8 @@ function javitasLista(P, fb) {
       <td>${x.elfogadott === false ? '<span class="badge b-gray">visszavonva</span>' : (S.szerkEz ? `<button class="btn small" data-visszavon="${x.allitas_id}">Visszavonás</button>` : '')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function forrasValaszto(prefix) {
-  const fr = [...S.kt.forras.values()].filter(f => f.fazis !== 'KIG-féle kutatás' && !/^(harmonizációs|kódlista|kódolói)/.test(f.tipus || ''));
+  const fr = [...S.kt.forras.values()].filter(f => f.fazis !== 'KIG-féle kutatás' && !/^(harmonizációs|kódlista|kódolói|származtatott)/.test(f.tipus || ''))
+    .sort((a, b) => (b.tipus === 'belső ellenőrzés') - (a.tipus === 'belső ellenőrzés'));
   return `<fieldset class="forras-box"><legend>Forrás (kötelező)</legend>
     <label>Forrás<select id="${prefix}-fs"><option value="">— válassz —</option>${fr.map(f => `<option value="${f.forras_id}">${esc(f.megnevezes)}</option>`).join('')}<option value="uj">+ Új forrás felvétele…</option></select></label>
     <div id="${prefix}-uj" class="hidden form" style="margin-top:0">
@@ -661,7 +662,11 @@ function forrasValaszto(prefix) {
 async function forrasAzonosito(prefix) {
   const v = $('#' + prefix + '-fs').value;
   if (!v) throw new Error('Válassz forrást, vagy vegyél fel újat.');
-  if (v !== 'uj') return Number(v);
+  if (v !== 'uj') {
+    if ((S.kt.forras.get(Number(v)) || {}).tipus === 'belső ellenőrzés' && !$('#' + prefix + '-megj').value.trim())
+      throw new Error('Elírás javításánál a Megjegyzésben röviden írd le, miből látszik az elírás (pl. „a születési év 1905, így 1993 nem lehet; helyesen 1893”).');
+    return Number(v);
+  }
   const nev = $('#' + prefix + '-un').value.trim();
   if (!nev) throw new Error('Add meg az új forrás megnevezését.');
   const { data } = await q(sb.rpc('forras_felvesz', { p_megnevezes: nev, p_tipus: $('#' + prefix + '-ut').value, p_hivatkozas: null }));
