@@ -86,6 +86,18 @@ async function kodok() {
   };
   return S.kodok;
 }
+function tavolsag(a, b) {
+  a = a.toUpperCase(); b = b.toUpperCase();
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+function hasonlok(ertek, vals, n = 4) {
+  return vals.filter(v => v.toUpperCase() !== ertek.toUpperCase()).map(v => [v, tavolsag(ertek, v)])
+    .filter(([v, t]) => t <= Math.max(2, Math.round(ertek.length / 4))).sort((x, y) => x[1] - y[1]).slice(0, n).map(x => x[0]);
+}
 function datalist(id, vals) { return `<datalist id="${id}">${vals.map(v => `<option value="${esc(v)}">`).join('')}</datalist>`; }
 
 // ---------- belépés ----------
@@ -243,10 +255,17 @@ async function szabalyReszlet(id, d, utana) {
     ${S.donto ? `<form class="form" id="szf">
       <div class="opts">
         <label><input type="radio" name="mod" value="lista" checked> <span>Felvesszük a(z) <b>${esc(MEZONEV[lista])}</b> listára ebben az alakban</span></label>
+        <label><input type="radio" name="mod" value="elir"> <span><b>Elírás</b> – javítjuk a helyes alakra (ugyanebben a mezőben)</span></label>
         <label><input type="radio" name="mod" value="atir"> <span>Átírjuk / áthelyezzük másik értékre vagy mezőbe</span></label>
         <label><input type="radio" name="mod" value="spec"> <span>Specifikációba kerül</span></label>
         <label><input type="radio" name="mod" value="spec2"> <span>Specifikációba kerül, <b>és</b> egy másik mezőbe más érték kerül (pl. Hivatás2: PAP)</span></label>
         <label><input type="radio" name="mod" value="elutasit"> <span>Elutasítjuk (a beírt érték érvénytelen, egyedileg kell javítani)</span></label>
+      </div>
+      <div id="elir" class="hidden form">
+        ${(() => { const h = hasonlok(s.beirt_ertek, k[s.oszlop] || []); return h.length ? `<div class="small">Hasonló listás értékek: ${h.map(v => `<button type="button" class="btn small" data-hasonlo="${esc(v)}">${esc(v)}</button>`).join(' ')}</div>` : '<p class="muted small" style="margin:0">Nincs hasonló érték a listán – írd be a helyes alakot.</p>'; })()}
+        <label>Helyes alak<input id="elire" list="dl-elir" value="${esc(s.cel_oszlop === s.oszlop && s.cel_ertek !== s.beirt_ertek ? s.cel_ertek || '' : '')}" placeholder="pl. ERDŐMÉRNÖK"></label>
+        ${datalist('dl-elir', k[s.oszlop] || [])}
+        <p class="muted small" style="margin:0">Ha a helyes alak még nincs a listán, a mentéskor felkerül rá. A szabály minden ugyanígy elgépelt sorra érvényes.</p>
       </div>
       <div id="atir" class="hidden form">
         <label>Célmező<select id="celo">${['harmonizalt', 'hivatas1', 'hivatas2', 'specifikacio'].map(c => `<option value="${c}" ${c === (s.cel_oszlop || s.oszlop) ? 'selected' : ''}>${MEZONEV[c]}</option>`).join('')}</select></label>
@@ -278,8 +297,10 @@ async function szabalyReszlet(id, d, utana) {
   const dl2 = () => { $('#dl2-wrap', d).innerHTML = datalist('dl-cel2', k[$('#cel2o', d).value] || []); };
   dl2(); $('#cel2o', d).addEventListener('change', dl2);
   if (s.cel_oszlop === 'specifikacio' && s.cel2_oszlop) f.mod.value = 'spec2';
-  else if (s.cel_oszlop === 'specifikacio') f.mod.value = 'spec'; else if (s.cel_oszlop && s.cel_oszlop !== s.oszlop || (s.cel_ertek && s.cel_ertek !== s.beirt_ertek)) f.mod.value = 'atir';
-  const mutat = () => { $('#atir', d).classList.toggle('hidden', f.mod.value !== 'atir'); $('#spec2', d).classList.toggle('hidden', f.mod.value !== 'spec2'); };
+  else if (s.cel_oszlop === 'specifikacio') f.mod.value = 'spec'; else if (s.cel_oszlop === s.oszlop && s.cel_ertek && s.cel_ertek.toUpperCase() !== s.beirt_ertek.toUpperCase()) f.mod.value = 'elir';
+  else if (s.cel_oszlop && s.cel_oszlop !== s.oszlop || (s.cel_ertek && s.cel_ertek !== s.beirt_ertek)) f.mod.value = 'atir';
+  d.querySelectorAll('[data-hasonlo]').forEach(b => b.addEventListener('click', () => { $('#elire', d).value = b.dataset.hasonlo; }));
+  const mutat = () => { $('#elir', d).classList.toggle('hidden', f.mod.value !== 'elir'); $('#atir', d).classList.toggle('hidden', f.mod.value !== 'atir'); $('#spec2', d).classList.toggle('hidden', f.mod.value !== 'spec2'); };
   mutat(); f.addEventListener('change', mutat);
   f.addEventListener('submit', async e => {
     e.preventDefault();
@@ -290,6 +311,17 @@ async function szabalyReszlet(id, d, utana) {
         await q(sb.rpc('lista_bovit', { p_lista: s.oszlop, p_ertek: s.beirt_ertek, p_meghatarozas: megj || null }));
         await q(sb.rpc('dont_szabaly', { p_szabaly_id: id, p_allapot: 'elfogadva', p_cel_oszlop: s.oszlop, p_cel_ertek: s.beirt_ertek, p_megjegyzes: megj || 'Felvéve a listára' }));
         S.kodok = null;
+      } else if (f.mod.value === 'elir') {
+        const v = $('#elire', d).value.trim();
+        if (!v) throw new Error('Add meg a helyes alakot.');
+        if (v.toUpperCase() === s.beirt_ertek.trim().toUpperCase()) throw new Error('A helyes alak megegyezik a beírt értékkel – ilyenkor a „Felvesszük a listára” lehetőséget válaszd.');
+        const listan = (k[s.oszlop] || []).find(x => x.toUpperCase() === v.toUpperCase());
+        if (!listan) {
+          if (!confirm(`A(z) „${v}” még nincs a(z) ${MEZONEV[s.oszlop]} listán. Felvegyük?`)) { btn.disabled = false; return; }
+          await q(sb.rpc('lista_bovit', { p_lista: s.oszlop, p_ertek: v, p_meghatarozas: null }));
+          S.kodok = null;
+        }
+        await q(sb.rpc('dont_szabaly', { p_szabaly_id: id, p_allapot: 'elfogadva', p_cel_oszlop: s.oszlop, p_cel_ertek: listan || v, p_megjegyzes: megj || 'Elírás javítása' }));
       } else if (f.mod.value === 'atir') {
         await q(sb.rpc('dont_szabaly', { p_szabaly_id: id, p_allapot: 'elfogadva', p_cel_oszlop: $('#celo', d).value, p_cel_ertek: $('#cele', d).value, p_megjegyzes: megj || null }));
       } else if (f.mod.value === 'spec2') {
