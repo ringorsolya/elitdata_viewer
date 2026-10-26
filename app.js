@@ -1045,11 +1045,16 @@ function evkodJeloltek(leiras, szul) {
   const m = /(\d+)/.exec(leiras || ''); if (!m) return [];
   const d = m[1], parok = d.length === 4 ? [[d.slice(0, 2), d.slice(2)]] : d.length === 2 ? [[d, d]] : [];
   const ki = [];
-  for (const [a, b] of parok) for (const [sa, sb2] of [['18', '18'], ['19', '19'], ['18', '19']]) {
+  const probal = (a, b, fordított) => { for (const [sa, sb2] of [['18', '18'], ['19', '19'], ['18', '19']]) {
     const x = Number(sa + a), y = Number(sb2 + b);
     if (y < x || ki.some(k => k[0] === x && k[1] === y)) continue;
     const ok = !szul || (x >= Number(szul) + 10 && y <= Number(szul) + 95 && y <= 1990);
-    ki.push([x, y, ok]);
+    ki.push([x, y, ok, fordított]);
+  } };
+  for (const [a, b] of parok) {
+    probal(a, b, false);
+    // ha a második év kisebb, valószínűleg felcserélődött a két év: a fordított sorrendet is felkínáljuk
+    if (Number(b) < Number(a)) probal(b, a, true);
   }
   return ki;
 }
@@ -1072,7 +1077,9 @@ async function karrierSzerk(karrierid, d, utana) {
       ${evkod ? `<div>Évkód</div><div><span class="badge b-warn">${esc(k.leiras)}</span> <span class="muted">a forrás kétjegyű évpárja (pl. 2023 = ’20–’23); az évszázad nem dönthető el automatikusan</span></div>` : ''}
     </div>
     ${szerk ? `<form class="form" id="kf-f">
-      ${jel.length ? `<div><span class="small muted">Lehetséges feloldások (kattintásra kitölti):</span><div class="chips">${jel.map(([x, y, ok]) => `<button type="button" class="chip ${ok ? '' : 'muted'}" data-jel="${x}-${y}" title="${ok ? '' : 'a születési év alapján valószínűtlen'}">${x === y ? x : x + '–' + y}</button>`).join('')}</div></div>` : ''}
+      ${jel.length ? `<div><span class="small muted">Lehetséges feloldások (kattintásra kitölti):</span><div class="chips">${jel.map(([x, y, ok, ford]) => `<button type="button" class="chip ${ok ? '' : 'muted'}" data-jel="${x}-${y}" title="${ford ? 'a két év felcserélésével (feltételezett elírás)' : ok ? '' : 'a születési év alapján valószínűtlen'}">${x === y ? x : x + '–' + y}${ford ? ' ⇄' : ''}</button>`).join('')}</div>
+        ${jel.some(j => j[3]) ? '<p class="small muted" style="margin:4px 0 0">A kódban a második év kisebb az elsőnél, ez valószínűleg rögzítési hiba. A ⇄ jelű javaslat a két év felcserélésével készült. Csak akkor válaszd, ha a forrás alátámasztja, és a Megjegyzésben jelezd.</p>' : ''}
+        ${!jel.some(j => j[2]) ? '<p class="small muted" style="margin:4px 0 0">Egyik feloldás sem illik a születési évhez: valószínűleg elírás van a forrásban. Nézd meg a forrást, és írd be kézzel a helyes éveket.</p>' : ''}</div>` : ''}
       <div class="szerk-racs">${KMEZO.map(([m, cim, tip]) => `<label data-m="${m}" data-tip="${tip}" data-eredeti="${esc(ertek(m))}">${cim}<input id="kf-${m}" value="${esc(ertek(m))}" ${tip === 'ev' ? 'inputmode="numeric" placeholder="éééé"' : ''}></label>`).join('')}</div>
       ${forrasValaszto('kf')}
       <div class="toolbar"><button class="btn primary" type="submit">Mentés</button></div><div id="kf-msg"></div>
