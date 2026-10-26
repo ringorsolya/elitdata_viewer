@@ -1127,6 +1127,9 @@ async function karrierSzerk(karrierid, d, utana) {
 }
 
 // ---------- Csoportok: egy foglalkozáscsoport egyben történő ellenőrzése ----------
+function masCsoportok(lista) {
+  return (lista || []).map(m => `<span class="badge ${m.ellenorzes === 'ellenőrizve' ? 'b-ok' : m.ellenorzes === 'kérdéses' ? 'b-bad' : 'b-gray'}" title="${esc(m.ellenorzes ? `${m.ellenorzes}: ${m.ellenorizte || ''}${m.ido ? ', ' + new Date(m.ido).toLocaleDateString('hu-HU') : ''}` : 'még nincs ellenőrizve')}">${esc(m.nev)}${m.ellenorzes === 'ellenőrizve' ? ' ✓' : ''}</span>`).join(' ') || '<span class="muted">—</span>';
+}
 const ELL_BADGE = { 'ellenőrizve': '<span class="badge b-ok">ellenőrizve</span>', 'kérdéses': '<span class="badge b-bad">kérdéses</span>' };
 async function csoportokLap() {
   location.hash = '';
@@ -1166,9 +1169,11 @@ async function csoportLap(csId, nezet = 'tagok') {
     const { data: tagok } = await q(sb.from('v_csoport_tagok').select('*').eq('csoport_id', csId).order('nev').range(0, 9999));
     S.csoportNav = { cs: csId, nev: c.nev, ids: tagok.map(t => t.szemelyid), nezet };
     const ok = tagok.filter(t => t.ellenorzes === 'ellenőrizve').length, pct = tagok.length ? Math.round(100 * ok / tagok.length) : 0;
+    const { count: alDb } = await q(sb.from('tbl_csoport_allomasok').select('karrierid', { count: 'exact', head: true }).eq('csoport_id', csId));
     app.innerHTML = `<p><a href="#" id="cs-vissza">‹ Csoportok</a></p>
       <div class="fejlec"><div><h2>${esc(c.nev)}</h2><p class="muted" style="margin:0">${esc(c.leiras || '')}${c.hivatas ? ` · kezdő tagság: harmonizált hivatás = ${esc(c.hivatas)}` : ''}</p></div>
         <div style="min-width:260px"><div class="halad"><div style="width:${pct}%"></div></div><p class="small" style="margin:4px 0 0">${tagok.length} fő · <b>${ok}</b> ellenőrizve (${pct}%)</p></div></div>
+      ${alDb ? `<p class="small muted">Ez a csoport karrierállomásokból áll (${alDb} állomás): a „Karrierállomások” nézet csak a csoporthoz tartozó állomásokat mutatja, a Karrier oszlopban „csoportban / összes”. Akinek nincs állomása a csoportban (a tanult kara alapján került ide), annak minden állomása látszik.</p>` : ''}
       <div class="chips" style="margin-top:12px"><button class="chip ${nezet === 'tagok' ? 'on' : ''}" data-nezet="tagok">Tagok</button><button class="chip ${nezet === 'karrier' ? 'on' : ''}" data-nezet="karrier">Karrierállomások egy táblában</button></div>
       <div id="cs-tartalom"></div>`;
     $('#cs-vissza').addEventListener('click', e => { e.preventDefault(); S.csoportNav = null; csoportokLap(); });
@@ -1189,11 +1194,12 @@ function csoportTagok(c, tagok) {
   const lista = () => {
     const t = tagok.filter(r => (!st.q || r.nev.toLowerCase().includes(st.q.toLowerCase()))
       && (!st.f || (st.f === 'nincs' ? !r.ellenorzes : st.f === 'teendo' ? (r.evkod_db || r.harm_nyitott || r.nyitott_kerdes || r.besorolatlan) : r.ellenorzes === st.f)));
-    $('#ct-list').innerHTML = t.length ? `<table><thead><tr><th>Név</th><th>Élt</th><th>Hivatás1 / Hivatás2</th><th>Karrier</th><th>Nyitott tételek</th><th>Ellenőrzés</th><th></th></tr></thead><tbody>${
+    $('#ct-list').innerHTML = t.length ? `<table><thead><tr><th>Név</th><th>Élt</th><th>Hivatás1 / Hivatás2</th><th>Karrier</th><th>Nyitott tételek</th><th>Ellenőrzés</th><th>Más csoportban is</th><th></th></tr></thead><tbody>${
       t.map(r => `<tr class="click" data-id="${r.szemelyid}"><td><b>${esc(r.nev)}</b></td><td class="small">${dash(r.szuletesiev)}–${r.halalev ? esc(ev(r.halalev, r.szuletesiev)) : '?'}</td>
-        <td class="small">${dash(r.hivatas1)}${r.hivatas2 ? ' / ' + esc(r.hivatas2) : ''}</td><td>${r.karrier_db}</td>
+        <td class="small">${dash(r.hivatas1)}${r.hivatas2 ? ' / ' + esc(r.hivatas2) : ''}</td><td>${r.csoport_allomas_db ? `${r.csoport_allomas_db} <span class="muted small">/ ${r.karrier_db}</span>` : r.karrier_db}</td>
         <td>${r.evkod_db ? `<span class="badge b-warn">${r.evkod_db} évkód</span> ` : ''}${r.harm_nyitott ? `<span class="badge b-warn">${r.harm_nyitott} besorolás</span> ` : ''}${r.besorolatlan ? `<span class="badge b-gray">${r.besorolatlan} besorolatlan</span> ` : ''}${r.nyitott_kerdes ? `<span class="badge b-bad">${r.nyitott_kerdes} kérdés</span>` : ''}</td>
         <td class="small">${ELL_BADGE[r.ellenorzes] || '<span class="muted">—</span>'}${r.ellenorizte ? `<br><span class="muted">${esc(r.ellenorizte)}</span>` : ''}${r.ellenorzes_megjegyzes ? `<br>${esc(r.ellenorzes_megjegyzes)}` : ''}</td>
+        <td class="small">${masCsoportok(r.mas_csoportok)}</td>
         <td><button class="btn small" data-kivesz="${r.szemelyid}" title="Nem tartozik ebbe a csoportba">Kivétel</button></td></tr>`).join('')}</tbody></table>`
       : '<div class="empty">Nincs találat.</div>';
     $('#ct-list tbody')?.addEventListener('click', async e => {
@@ -1313,7 +1319,7 @@ async function csoportKarrier(c) {
 function csoportSav(id) {
   const N = S.csoportNav; if (!N || !N.ids.includes(id)) return '';
   const i = N.ids.indexOf(id);
-  return `<div class="card csop-sav"><div><b>${esc(N.nev)}</b> <span class="muted">· ${i + 1} / ${N.ids.length}</span> <span id="cs-allapot"></span></div>
+  return `<div class="card csop-sav"><div><b>${esc(N.nev)}</b> <span class="muted">· ${i + 1} / ${N.ids.length}</span> <span id="cs-allapot"></span><div class="small" id="cs-mas"></div></div>
     <div class="toolbar" style="margin:0">
       <button class="btn" id="cs-elozo" ${i === 0 ? 'disabled' : ''}>‹ Előző</button>
       ${S.szerkEz ? `<input id="cs-megj" placeholder="Megjegyzés (pl. mit kell még megnézni)">
@@ -1324,6 +1330,8 @@ async function csoportSavKezel(id) {
   const N = S.csoportNav; if (!N || !N.ids.includes(id)) return;
   const i = N.ids.indexOf(id);
   const { data: t } = await q(sb.from('tbl_csoport_tagok').select('ellenorzes,ellenorzes_megjegyzes,ellenorizte,ellenorzes_ideje').eq('csoport_id', N.cs).eq('szemelyid', id).maybeSingle());
+  const { data: vt } = await q(sb.from('v_csoport_tagok').select('mas_csoportok').eq('csoport_id', N.cs).eq('szemelyid', id).maybeSingle());
+  if (vt && vt.mas_csoportok && vt.mas_csoportok.length) $('#cs-mas').innerHTML = 'Más csoportban is: ' + masCsoportok(vt.mas_csoportok);
   if (t) {
     $('#cs-allapot').innerHTML = (ELL_BADGE[t.ellenorzes] || '<span class="badge b-gray">még nincs ellenőrizve</span>') + (t.ellenorizte ? ` <span class="muted small">${esc(t.ellenorizte)}, ${new Date(t.ellenorzes_ideje).toLocaleDateString('hu-HU')}</span>` : '');
     if ($('#cs-megj')) $('#cs-megj').value = t.ellenorzes_megjegyzes || '';
