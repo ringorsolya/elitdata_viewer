@@ -318,6 +318,7 @@ async function harmReszlet(harmId, d, utana) {
       <div>Forrás</div><div>${forrasBadge(f.megnevezes, f.fazis)} ${esc(f.megnevezes)} (${esc(h.fajl_munkalap || '')}, ${esc(h.fajl_sor || '')}. sor)</div>
       ${h.megjegyzes ? `<div>Kódolói megjegyzés</div><div>${esc(h.megjegyzes)}</div>` : ''}
       ${h.jeloles ? `<div>Jelölés</div><div>${esc(h.jeloles)}</div>` : ''}
+      ${[['hierarchia_beirt', 'Hierarchia'], ['agazat_beirt', 'Ágazat'], ['hangszer_beirt', 'Hangszer'], ['statusz_beirt', 'Státusz']].filter(([m]) => h[m]).map(([m, c]) => `<div>${c}</div><div>${esc(h[m])}</div>`).join('')}
       ${h.egyedi_dontotte ? `<div>Egyedi döntés</div><div>${esc(h.egyedi_dontotte)}, ${new Date(h.egyedi_ideje).toLocaleString('hu-HU')}${h.egyedi_megjegyzes ? ' – ' + esc(h.egyedi_megjegyzes) : ''}</div>` : ''}
     </div>
     <h3>Besorolás</h3>
