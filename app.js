@@ -242,7 +242,14 @@ async function szabalyReszlet(id, d, utana) {
     const x = szem.get(key); x.sorok++; if (r.fajl_foglalkozas) x.fogl.add(r.fajl_foglalkozas);
   }
   const lista = s.oszlop;
+  let kanon = null;
+  if (s.allapot === 'összevonva') {
+    const { data: ks } = await q(sb.from('tbl_ertek_szabalyok').select('szabaly_id,beirt_ertek,allapot,cel_oszlop,cel_ertek,cel2_oszlop,cel2_ertek')
+      .eq('oszlop', s.oszlop).neq('allapot', 'összevonva').ilike('beirt_ertek', s.beirt_ertek.trim().replace(/[\\%_]/g, m => '\\' + m)));
+    kanon = (ks || [])[0] || null;
+  }
   d.innerHTML = `<div class="card">
+    ${kanon ? `<div class="msg info small" style="margin-bottom:10px">Ez a szabály össze van vonva a(z) <b>„${esc(kanon.beirt_ertek)}”</b> szabállyal (csak kis/nagybetűben tér el), annak döntése érvényes rá is: ${allapotBadge(kanon.allapot)} ${celSzoveg(kanon) || ''}. Ha itt döntesz, a döntés a(z) „${esc(kanon.beirt_ertek)}” szabályra kerül, és mindkét alakra érvényes lesz.</div>` : ''}
     <h3 style="margin-top:0">${esc(MEZONEV[s.oszlop])}: „${esc(s.beirt_ertek)}”</h3>
     <div class="kv small">
       <div>Állapot</div><div>${allapotBadge(s.allapot)}</div>
