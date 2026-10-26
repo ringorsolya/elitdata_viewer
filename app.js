@@ -441,7 +441,7 @@ async function kodtablak() {
     hely: m(vm.data, 'kodertek', 'kodnev'),
     kitHazai: m(kit.data.filter(r => r.lista === 1), 'kituntetekod', 'kituntetenev'),
     kitKulf: kk.data,
-    kitLista: [2, 3].reduce((o, l) => (o[l] = m(kit.data.filter(r => r.lista === l), 'kituntetekod', 'kituntetenev'), o), {}),
+    kitLista: [2, 3, 4, 5].reduce((o, l) => (o[l] = m(kit.data.filter(r => r.lista === l), 'kituntetekod', 'kituntetenev'), o), {}),
     part: m(part.data, 'partkod', 'partnev'),
     szerzetes: m(szerz.data, 'kodertek', 'kodnev'),
     zst: m(zst.data, 'kodertek', 'kodnev'),
@@ -574,7 +574,11 @@ function profilRender(P, id) {
         kulf.length ? '<h4>Külföldi kitüntetések</h4>' + tabla(kulf, [
           { c: 'Ország', f: s => helyF(s.orszagkod) }, { c: 'Kitüntetés', f: kitKulfNev }, { c: 'Év', f: s => evF(s.ev) }]) : ''];
     })(),
-    P.csapat_ermek?.length ? '<h4>Címek, érmek (CA/CE)</h4>' + tabla(P.csapat_ermek, [{ c: 'Típus', k: 'tipus' }, { c: 'Kód', f: s => kod(s.kituntetekod) }, { c: 'Év', f: s => evF(s.ev) }]) : '',
+    P.csapat_ermek?.length ? '<h4>Címek (állami és egyházi)</h4>' + tabla(P.csapat_ermek, [
+      { c: 'Típus', f: s => esc({ CA: 'állami cím', CE: 'egyházi cím' }[s.tipus] || s.tipus) },
+      // CA = 4. kódlista (állami címek), CE = 5. kódlista (egyházi címek); a listán túli kódok jelentése a kódkönyvből pótlandó
+      { c: 'Cím', f: s => { const n = kt.kitLista[{ CA: 4, CE: 5 }[s.tipus]]?.get(Number(s.kituntetekod)); return n ? esc(n) : kod(s.kituntetekod); } },
+      { c: 'Év', f: s => evF(s.ev) }]) : '',
     P.dijak?.length ? '<h4>Díjak</h4>' + tabla(P.dijak, [{ c: 'Díj', k: 'dijaknev' }, { c: 'Adományozó', k: 'dijakkod' }, { c: 'Helyszín', f: s => helyF(s.helyszinkod) }, { c: 'Év', f: s => evF(s.ev) }]) : '',
     P.diszdoktoratus?.length ? '<h4>Díszdoktorátus</h4>' + tabla(P.diszdoktoratus, [{ c: 'Egyetem', k: 'egyetemkod' }, { c: 'Helyszín', f: s => helyF(s.helyszinkod) }, { c: 'Év', f: s => evF(s.ev) }]) : '',
     P.akad_kituntetesek?.length ? '<h4>Külföldi akadémiai tagság</h4>' + tabla(P.akad_kituntetesek, [{ c: 'Akadémia', k: 'szervezetnev' }, { c: 'Ország', f: s => helyF(s.orszagkod) }, { c: 'Tagság', f: s => kod(s.kituntetekod) }, { c: 'Év', f: s => evF(s.ev) }]) : '',
