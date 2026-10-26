@@ -94,7 +94,14 @@ tr.sel td{background:var(--accent-soft)}
   .kv div:nth-child(odd){margin-top:6px}
 }
 .kod{font-family:ui-monospace,Menlo,monospace;font-size:.82rem;color:var(--warn);background:var(--warn-soft);border-radius:5px;padding:0 5px;white-space:nowrap}
-.szakasz{margin-bottom:14px}
+.szakasz{margin-bottom:14px;position:relative}
+.szerk-gomb{position:absolute;top:12px;right:16px}
+.szerk-racs{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px 14px}
+.szerk-racs label{min-width:0}.szerk-racs select,.szerk-racs input{width:100%;min-width:0}
+.forras-box{border:1px solid var(--line);border-radius:10px;padding:10px 14px;display:grid;gap:10px}
+.forras-box legend{color:var(--accent);font-weight:600;padding:0 6px}
+tr.visszavont td{opacity:.55;text-decoration:line-through}
+.btn.small{padding:3px 8px;font-size:.85rem}
 .szakasz h3{margin-top:0}
 h4{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:.98rem;margin:14px 0 6px}
 .fejlec{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
