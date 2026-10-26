@@ -373,33 +373,43 @@ async function ellenorzendoReszlet(id, d, utana) {
 }
 
 // ---------- Személyek ----------
+function szerepNev(sz) {
+  const m = /^(.*?)\s*(\d+)$/.exec(sz || ''); const alap = (m ? m[1] : sz || '').replace('hazastars', 'házastárs').replace('gyerek', 'gyermek').replace('dedapa', 'dédapa');
+  return m ? `${m[2]}. ${alap}` : alap;
+}
 async function szemelyekLap() {
   location.hash = '';
   app.innerHTML = `<h2>Személyek</h2>
-    <p class="muted">Az elittagok listája. Kattints egy névre az adatlaphoz.</p>
+    <p class="muted">Az elittagok és családtagjaik. Kattints egy névre az adatlaphoz; a családtagoknál az „Elittag” oszlopban a hozzájuk tartozó elittag.</p>
     <div class="toolbar"><input type="search" id="sz-q" placeholder="Név…">
+      <select id="sz-kik"><option value="elit">Elittagok</option><option value="csalad">Családtagok</option><option value="mind">Mindenki</option></select>
       <select id="sz-f"><option value="">Mind</option><option value="nyitott">Van nyitott harmonizáció</option><option value="kerdes">Van nyitott kérdés</option><option value="nokarr">Nincs karrieradat</option></select></div>
     <div class="tbl-wrap" id="sz-list"></div><div id="sz-pager"></div>`;
-  const st = { page: 0, kereses: '', szuro: '' };
+  const st = { page: 0, kereses: '', szuro: '', kik: 'elit' };
   const lista = async () => {
     const box = $('#sz-list'); box.innerHTML = '<div class="empty">Betöltés…</div>';
-    let qq = sb.from('v_szemely_lista').select('*', { count: 'exact' });
+    let qq = sb.from('v_szemely_minden').select('*', { count: 'exact' });
+    if (st.kik === 'elit') qq = qq.eq('elittage', 1); else if (st.kik === 'csalad') qq = qq.neq('elittage', 1);
     if (st.kereses) { const t = st.kereses.split(/\s+/); qq = t.length > 1 ? qq.ilike('vezeteknev', `%${t[0]}%`).ilike('keresztnev', `%${t.slice(1).join(' ')}%`) : qq.or(`vezeteknev.ilike.%${t[0]}%,keresztnev.ilike.%${t[0]}%`); }
     if (st.szuro === 'nyitott') qq = qq.gt('harm_nyitott', 0);
     if (st.szuro === 'kerdes') qq = qq.gt('nyitott_kerdes', 0);
     if (st.szuro === 'nokarr') qq = qq.eq('karrier_db', 0);
     try {
       const { data, count } = await q(qq.order('vezeteknev').order('keresztnev').range(st.page * PAGE, st.page * PAGE + PAGE - 1));
-      box.innerHTML = data.length ? `<table><thead><tr><th>Név</th><th>Született</th><th>Karrierállomás</th><th>Harmonizálva</th><th>Nyitott</th></tr></thead><tbody>${
+      box.innerHTML = data.length ? `<table><thead><tr><th>Név</th><th>Született</th><th>Szerep</th><th>Elittag</th><th>Karrier / foglalkozás</th><th>Nyitott</th></tr></thead><tbody>${
         data.map(r => `<tr class="click" data-id="${r.szemelyid}"><td><b>${esc(r.vezeteknev)} ${esc(r.keresztnev)}</b></td><td>${dash(r.szuletesiev)} <span class="muted small">${esc(r.szuletesihely || '')}</span></td>
-          <td>${r.karrier_db}</td><td>${r.harm_rendben}</td><td>${r.harm_nyitott ? `<span class="badge b-warn">${r.harm_nyitott} sor</span>` : ''} ${r.nyitott_kerdes ? `<span class="badge b-bad">${r.nyitott_kerdes} kérdés</span>` : ''}</td></tr>`).join('')}</tbody></table>`
+          <td class="small">${r.elittage === 1 ? '<span class="badge b-info">elittag</span>' : esc(szerepNev(r.szerep))}</td>
+          <td class="small">${r.elittag_id ? `<a href="#szemely=${r.elittag_id}" data-elit="${r.elittag_id}">${esc(r.elittag_nev)}</a>` : ''}</td>
+          <td class="small">${r.elittage === 1 ? `${r.karrier_db} karrierállomás` : esc(r.foglalkozasok || '')}</td>
+          <td>${r.harm_nyitott ? `<span class="badge b-warn">${r.harm_nyitott} sor</span>` : ''} ${r.nyitott_kerdes ? `<span class="badge b-bad">${r.nyitott_kerdes} kérdés</span>` : ''}</td></tr>`).join('')}</tbody></table>`
         : '<div class="empty">Nincs találat.</div>';
-      box.querySelector('tbody')?.addEventListener('click', e => { const tr = e.target.closest('tr'); if (tr) szemelyLap(Number(tr.dataset.id)); });
+      box.querySelector('tbody')?.addEventListener('click', e => { e.preventDefault(); const a = e.target.closest('[data-elit]'); if (a) return szemelyLap(Number(a.dataset.elit)); const tr = e.target.closest('tr'); if (tr) szemelyLap(Number(tr.dataset.id)); });
       $('#sz-pager').innerHTML = ''; $('#sz-pager').appendChild(pager(count, st.page, p => { st.page = p; lista(); }));
     } catch (e) { hibaKiir(box, e); }
   };
   $('#sz-q').addEventListener('input', debounce(e => { st.kereses = tiszta(e.target.value); st.page = 0; lista(); }));
   $('#sz-f').addEventListener('change', e => { st.szuro = e.target.value; st.page = 0; lista(); });
+  $('#sz-kik').addEventListener('change', e => { st.kik = e.target.value; st.page = 0; lista(); });
   lista();
 }
 
@@ -445,6 +455,7 @@ function profilRender(P, id) {
   const kt = S.kt;
   const sz = P.szemely || {}, r = P.reszletek || {};
   const szul = ev(sz.szuletesiev);
+  const elit = Number(sz.elittage) === 1;
   const kod = v => (v === null || v === undefined || v === '') ? null : `<span class="kod" title="A kód jelentése a KIG-kódkönyvből pótlandó">kód ${esc(v)}</span>`;
   const helyF = v => { if (v === null || v === undefined || v === '') return null; const n = kt.hely.get(Number(v)); return n ? `${esc(n)} <span class="muted small">(${esc(v)})</span>` : kod(v); };
   const evF = v => (v === null || v === undefined || v === '') ? null : esc(ev(v, szul));
@@ -529,8 +540,8 @@ function profilRender(P, id) {
       <td>${k.harm_id ? allapotBadge(k.harm_allapot) : '<span class="muted small">nincs besorolva</span>'}</td>${S.szerkEz ? `<td><button class="btn small" data-kj="${k.karrierid}">Javítás</button></td>` : ''}</tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nincs karrieradat.</p>';
   const karrierpoz = tabla(P.karrierpoziciok, [{ c: 'Belépés éve', f: s => evF(s.belepesev) }, { c: 'Pozíciókód évenként', f: s => pozkod(s), cls: 'small' }]);
   const csalad = tabla(P.csalad, [
-    { c: 'Viszony', f: s => esc(SZEREP[s.szerep] || (s.szerep || '').toLowerCase().replace('_', ' ') || s.viszony) },
-    { c: 'Név', f: s => esc(s.nev) },
+    { c: 'Viszony', f: s => elit ? esc(SZEREP[s.szerep] || (s.szerep || '').toLowerCase().replace('_', ' ') || s.viszony) : esc(s.viszony) + (Number(s.elittage) === 1 ? ' <span class="badge b-info">elittag</span>' : '') },
+    { c: 'Név', f: s => `<a href="#szemely=${s.rokonid}" data-szem="${s.rokonid}">${esc(s.nev)}</a>` },
     { c: 'Született', f: s => [s.szuletesiev ? ev(s.szuletesiev) : null, s.szuletesihely].filter(Boolean).map(esc).join(', ') || null },
     { c: 'Házasságból', f: s => s.hazassagbol ? esc(s.hazassagbol) + '.' : null },
     { c: 'Foglalkozás', f: s => (s.foglalkozasok || []).map(f => `${esc(f.foglalkozas)} <span class="muted small">(${esc((f.mikor || '').replace(' foglalkozás', ''))})</span>${javJel(f)}`).join('; ') || null, cls: 'small' },
@@ -578,6 +589,7 @@ function profilRender(P, id) {
   ].join('');
   const nyit = P.nyitott || [];
   const db = a => (a && a.length) || 0;
+  const foglalk = tabla(P.foglalkozasok, [{ c: 'Mikor', f: s => esc(s.mikor || s.idopontkod) }, { c: 'Foglalkozás', k: 'foglalkozas' }]);
   const tartalom = [
     ['alap', 'Alapadatok', `${S.szerkEz ? '<div class="szerk-gomb"><button class="btn" id="alap-szerk">Szerkesztés</button></div>' : ''}<div id="alap-nezet"><div class="grid2"><div>${alap}</div><div>${halal}</div></div>${javitasLista(P, fb)}</div><div id="alap-urlap"></div>`],
     ['csalad', 'Család', `${csaladiAllapot}<h4>Rokonok</h4>${csalad}`, db(P.csalad)],
@@ -592,12 +604,18 @@ function profilRender(P, id) {
     ['kulfold', 'Külföldi tartózkodás', kulfold, db(P.kulfold)],
     ['vagyon', 'Vagyon, lakás, háztartás', vagyon || '<p class="muted">Nincs adat.</p>'],
   ];
-  return { szul, nyit, tartalom, nev: `${sz.vezeteknev || ''} ${sz.keresztnev || ''}`.trim() };
+  if (!elit || db(P.foglalkozasok)) tartalom.splice(2, 0, ['foglalkozasok', 'Foglalkozások', foglalk, db(P.foglalkozasok)]);
+  // családtagoknál csak az alapadatok, a család, a vallás, a foglalkozások és az esetleg kitöltött további blokkok
+  const ures = h => !h || /^\s*(<p class="muted">Nincs adat\.<\/p>\s*)*$/.test(h.replace(/<h4>[^<]*<\/h4>/g, ''));
+  const tart = elit ? tartalom : tartalom.filter(([k, , h]) => ['alap', 'csalad', 'vallas', 'foglalkozasok'].includes(k) || (k === 'karrier' ? db(P.karrier) > 0 : !ures(h)));
+  const nv = m => { const a = allit['tbl_szemelyek.' + m]; return a ? a.ertek : sz[m]; };
+  return { szul, nyit, tartalom: tart, elit, nev: `${nv('vezeteknev') || ''} ${nv('keresztnev') || ''}`.trim() };
 }
 
 
 // ---------- Alapadatok javítása ----------
 const JAVITHATO = [
+  ['tbl_szemelyek', 'vezeteknev', 'Vezetéknév', 'text'], ['tbl_szemelyek', 'keresztnev', 'Keresztnév', 'text'],
   ['tbl_szemelyek', 'szuletesiev', 'Születési év', 'ev'], ['tbl_szemelyek', 'szuletesihely', 'Születési hely', 'text'],
   ['tbl_szemelyek', 'szuletesiorszagkod', 'Születési vármegye / ország', 'hely'], ['tbl_szemelyek', 'nemzetisegkod', 'Nemzetiség (kód)', 'kod'],
   ['tbl_szemelyek', 'doktoricim', 'Doktori cím', 'bool'], ['tbl_szemelyek', 'szerzetese', 'Szerzetes', 'bool'],
@@ -667,7 +685,7 @@ function alapSzerkeszt(P, id) {
   const box = $('#alap-urlap');
   $('#alap-nezet').classList.add('hidden'); $('#alap-szerk').classList.add('hidden');
   box.innerHTML = `<form id="alap-f" class="form"><p class="muted small">Csak a megváltoztatott mezők mentődnek, új bejegyzésként; az eredeti érték megmarad és visszakereshető.</p>
-    <div class="szerk-racs">${JAVITHATO.map(mezo).join('')}</div>${forrasValaszto('af')}
+    <div class="szerk-racs">${JAVITHATO.filter(j => Number(P.szemely.elittage) === 1 || j[0] === 'tbl_szemelyek').map(mezo).join('')}</div>${forrasValaszto('af')}
     <div class="toolbar"><button class="btn primary" type="submit">Mentés</button><button class="btn" type="button" id="alap-megse">Mégse</button></div><div id="alap-msg"></div></form>`;
   box.querySelectorAll('label[data-k]').forEach(l => { const el = l.querySelector('input,select'); el.value = l.dataset.eredeti; });
   $('#af-fs').addEventListener('change', e => $('#af-uj').classList.toggle('hidden', e.target.value !== 'uj'));
@@ -708,7 +726,7 @@ const LISTA = {
   felsohaz_pozicio: ['tbl_felsohaz_pozicio', 'Felsőházi pozíció'], parl_bizottsag: ['tbl_parl_bizottsag_pozicio', 'Parlamenti bizottság'],
   egyeb_politikai: ['tbl_egyeb_politikai_poz', 'Egyéb politikai adatok'], perek: ['tbl_perek_iteletek', 'Perek, ítéletek'],
   zsidotorvenyek: ['tbl_zsidotorvenyek', 'Zsidótörvények'], vagyon: ['tbl_vagyoni_helyzet', 'Vagyoni helyzet'], lakas: ['tbl_lakas', 'Lakás'],
-  haztartas: ['tbl_haztartas_tagok', 'Háztartás'],
+  haztartas: ['tbl_haztartas_tagok', 'Háztartás'], foglalkozasok: ['tbl_foglalkozasok', 'Foglalkozások'],
 };
 const PK = { tbl_karrier: 'karrierid', tbl_vallas: 'vallasid', tbl_nemesseg: 'nemessegid', tbl_nevvaltoztatasok: 'nevvaltoztatasid', tbl_tanulmanyok: 'tanulmanyid',
   tbl_csaladi_kapcsolatok_kodolt: 'kapcsolatid', tbl_foglalkozasok: 'foglalkozasid', tbl_katonaiszolgalat: 'katonaiid', tbl_kulfolditartozkodasok: 'tartoskodasid',
@@ -725,6 +743,7 @@ const SZAKASZ_SZERK = {
   szervezet: { listak: ['szervezet_belfold', 'szervezet_kulfold'] },
   politika: { listak: ['parttagsag', 'part_megfigyeles', 'felsohaz_tagsag', 'felsohaz_pozicio', 'parl_bizottsag', 'egyeb_politikai', 'perek', 'zsidotorvenyek'] },
   katonai: { listak: ['katonai'] }, kulfold: { listak: ['kulfold'] }, vagyon: { listak: ['vagyon', 'lakas', 'haztartas'] },
+  foglalkozasok: { listak: ['foglalkozasok'] },
 };
 const KARRIER_OSZL = ['elsoev', 'utolsoev', 'foglalkozas', 'munkahely', 'helyszin'];
 const CIMKE = { ev: 'Év', sorszam: 'Sorszám', kituntetekod: 'Kitüntetés (kód)', orszagkod: 'Ország', helyszinkod: 'Helyszín', lista: 'Lista', tipus: 'Típus',
@@ -781,6 +800,7 @@ function sorJavitasokAlkalmaz(P) {
     if (key === 'karrier' || !P[key]) continue;
     P[key] = P[key].map(r => sorAlkalmaz(r, tabla, L)).filter(Boolean);
   }
+  (P.foglalkozasok || []).forEach(f => { f.mikor = (S.kt.idopont.find(i => i.idopontkod === f.idopontkod) || {}).idopontnev || f.idopontkod; });
   (P.tanulmanyok || []).forEach(t => { if (t._jav.includes('egyetemid')) t.egyetem = S.kt.egyetem.get(Number(t.egyetemid)) || (t.egyetemid ? 'egyetem ' + t.egyetemid : null); });
   // rokonok: a kapcsolat törlése, a rokon alapadatainak javítása, foglalkozásaik
   const RA = new Map();
@@ -978,6 +998,7 @@ async function szemelyLap(id) {
     const sz = P.szemely;
     app.innerHTML = `<p><a href="#" id="vissza">‹ Vissza a listához</a></p>
       <div class="fejlec"><div><h2>${esc(R.nev)}</h2>
+        ${R.elit ? '' : `<p><span class="badge b-gray">családtag</span> ${P.elittag ? `${esc(szerepNev((sz.eredetiazon2 || '').toLowerCase().replace(/_(\d+)$/, ' $1').replace(/_/g, ' ')))} – elittag: <a href="#szemely=${P.elittag.szemelyid}" data-szem="${P.elittag.szemelyid}">${esc(P.elittag.nev)}</a>` : ''}</p>`}
         <p class="muted">${R.szul ? esc(R.szul) : '?'}${P.reszletek && P.reszletek.halalev ? '–' + esc(ev(P.reszletek.halalev, R.szul)) : ''} · ${esc(sz.szuletesihely || '')} · SzemélyID: ${id}</p>
         <p class="small">Csoport: ${(csop || []).map(c => S.szerkEz
           ? `<label class="csop-tag"><input type="checkbox" data-csop="${c.csoport_id}" ${tagja.has(c.csoport_id) ? 'checked' : ''}> ${esc(c.nev)}</label>`
@@ -991,6 +1012,7 @@ async function szemelyLap(id) {
         S.szerkEz && SZAKASZ_SZERK[k] ? `<div class="szerk-gomb"><button class="btn" data-szakasz="${k}">Szerkesztés</button></div><div id="nezet-${k}">${html}</div><div id="urlap-${k}"></div>` : html}</section></div>`).join('')}`;
     $('#vissza').addEventListener('click', e => { e.preventDefault(); if (S.csoportNav && S.csoportNav.ids.includes(id)) { valt('csoportok', false); csoportLap(S.csoportNav.cs, S.csoportNav.nezet); } else szemelyekLap(); });
     csoportSavKezel(id);
+    szemLinkek(app);
     $('#alap-szerk')?.addEventListener('click', () => alapSzerkeszt(P, id));
     app.querySelectorAll('[data-szakasz]').forEach(b => b.addEventListener('click', () => szakaszSzerk(P, id, b.dataset.szakasz)));
     app.querySelectorAll('[data-visszavon]').forEach(b => b.addEventListener('click', async () => {
