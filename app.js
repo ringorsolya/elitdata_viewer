@@ -441,6 +441,7 @@ async function kodtablak() {
     hely: m(vm.data, 'kodertek', 'kodnev'),
     kitHazai: m(kit.data.filter(r => r.lista === 1), 'kituntetekod', 'kituntetenev'),
     kitKulf: kk.data,
+    kitLista: [2, 3].reduce((o, l) => (o[l] = m(kit.data.filter(r => r.lista === l), 'kituntetekod', 'kituntetenev'), o), {}),
     part: m(part.data, 'partkod', 'partnev'),
     szerzetes: m(szerz.data, 'kodertek', 'kodnev'),
     zst: m(zst.data, 'kodertek', 'kodnev'),
@@ -554,6 +555,9 @@ function profilRender(P, id) {
     { c: 'Foglalkozás', f: s => (s.foglalkozasok || []).map(f => `${esc(f.foglalkozas)} <span class="muted small">(${esc((f.mikor || '').replace(' foglalkozás', ''))})</span>${javJel(f)}`).join('; ') || null, cls: 'small' },
   ]);
   const kitKulfNev = s => {
+    // a „K2”/„K3” jelű sorok kódja nem külföldi kitüntetés, hanem a 2. (1946–49) ill. 3. (1949 utáni) hazai kódlista eleme
+    const ln = { K2: 2, K3: 3 }[String(s.lista || '').trim().toUpperCase()];
+    if (ln) { const n = kt.kitLista[ln]?.get(Number(s.kituntetekod)); return n ? esc(n) : kod(s.kituntetekod); }
     const orszag = kt.hely.get(Number(s.orszagkod));
     const t = kt.kitKulf.find(k => Number(k.kodertek) === Number(s.kituntetekod) && orszag && (orszag.startsWith(k.orszag) || k.orszag.startsWith(orszag.split(' ')[0])));
     return t ? esc(t.kituntetenev) : `${kod(s.kituntetekod)}`;
@@ -561,8 +565,15 @@ function profilRender(P, id) {
   const kituntetes = [
     P.kituntetes_hazai?.length ? '<h4>Hazai kitüntetések</h4>' + tabla(P.kituntetes_hazai, [
       { c: 'Kitüntetés', f: s => kt.kitHazai.get(Number(s.kituntetekod)) ? esc(kt.kitHazai.get(Number(s.kituntetekod))) : kod(s.kituntetekod) }, { c: 'Év', f: s => evF(s.ev) }]) : '',
-    P.kituntetes_kulfoldi?.length ? '<h4>Külföldi kitüntetések</h4>' + tabla(P.kituntetes_kulfoldi, [
-      { c: 'Ország', f: s => helyF(s.orszagkod) }, { c: 'Kitüntetés', f: kitKulfNev }, { c: 'Lista', k: 'lista' }, { c: 'Év', f: s => evF(s.ev) }]) : '',
+    ...(() => {
+      const K = P.kituntetes_kulfoldi || [], uj = K.filter(s => /^K[23]$/i.test(String(s.lista || '').trim())), kulf = K.filter(s => !uj.includes(s));
+      const LN = { K2: '2. lista (1946–1949)', K3: '3. lista (1949 után)' };
+      return [
+        uj.length ? '<h4>Hazai kitüntetések 1945 után</h4>' + tabla(uj, [
+          { c: 'Kitüntetés', f: kitKulfNev }, { c: 'Kódlista', f: s => esc(LN[String(s.lista).trim().toUpperCase()] || s.lista) }, { c: 'Év', f: s => evF(s.ev) }]) : '',
+        kulf.length ? '<h4>Külföldi kitüntetések</h4>' + tabla(kulf, [
+          { c: 'Ország', f: s => helyF(s.orszagkod) }, { c: 'Kitüntetés', f: kitKulfNev }, { c: 'Év', f: s => evF(s.ev) }]) : ''];
+    })(),
     P.csapat_ermek?.length ? '<h4>Címek, érmek (CA/CE)</h4>' + tabla(P.csapat_ermek, [{ c: 'Típus', k: 'tipus' }, { c: 'Kód', f: s => kod(s.kituntetekod) }, { c: 'Év', f: s => evF(s.ev) }]) : '',
     P.dijak?.length ? '<h4>Díjak</h4>' + tabla(P.dijak, [{ c: 'Díj', k: 'dijaknev' }, { c: 'Adományozó', k: 'dijakkod' }, { c: 'Helyszín', f: s => helyF(s.helyszinkod) }, { c: 'Év', f: s => evF(s.ev) }]) : '',
     P.diszdoktoratus?.length ? '<h4>Díszdoktorátus</h4>' + tabla(P.diszdoktoratus, [{ c: 'Egyetem', k: 'egyetemkod' }, { c: 'Helyszín', f: s => helyF(s.helyszinkod) }, { c: 'Év', f: s => evF(s.ev) }]) : '',
