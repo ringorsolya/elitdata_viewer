@@ -72,6 +72,16 @@ tr.sel td{background:var(--accent-soft)}
 .b-info{background:var(--accent-soft);color:var(--accent)}
 .csop-tag{display:inline-flex;gap:4px;align-items:center;margin-right:10px;font-weight:500}
 .chip.muted{opacity:.6}
+.csop-racs{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.csop-kartya{cursor:pointer}.csop-kartya:hover{border-color:var(--accent)}
+.halad{height:8px;border-radius:99px;background:var(--bg);border:1px solid var(--line);overflow:hidden}.halad div{height:100%;background:var(--ok)}
+.csop-sav{position:sticky;top:64px;z-index:4;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 12px;padding:10px 14px}
+.csop-sav input{min-width:220px}
+.ck-tbl td{padding:4px 6px}.ck-tbl tr.uj-szemely td{border-top:2px solid var(--line)}
+.ck-in{width:100%;min-width:0;padding:3px 6px;border-color:transparent;background:var(--bg)}
+.ck-in:focus{border-color:var(--accent)}.ck-in.valt{background:var(--warn-soft);border-color:var(--warn)}.ck-in.jav{box-shadow:inset 3px 0 0 var(--accent)}
+.ck-tbl td.w-fogl{min-width:170px}.ck-tbl td.w-mh{min-width:200px}
+.ck-mentes{margin-top:12px}
 .kv{display:grid;grid-template-columns:minmax(120px,200px) 1fr;gap:4px 14px}
 .kv div:nth-child(odd){color:var(--muted)}
 .pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:8px}
@@ -122,6 +132,7 @@ h4{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:.98rem;m
     <nav class="tabs" id="tabs">
       <button data-tab="nyitott" class="on">Nyitott kérdések</button>
       <button data-tab="szemelyek">Személyek</button>
+      <button data-tab="csoportok">Csoportok</button>
       <button data-tab="harm">Harmonizáció</button>
       <button data-tab="szabalyok">Szabályok</button>
       <button data-tab="naplo">Napló</button>

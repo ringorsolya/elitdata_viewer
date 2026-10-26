@@ -11,7 +11,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 
 const PAGE = 50;
-const S = { user: null, szerep: null, donto: false, tab: 'nyitott', kodok: null, csoportjaim: [], szerkCache: new Map(), szerkEz: false };
+const S = { csoportNav: null, user: null, szerep: null, donto: false, tab: 'nyitott', kodok: null, csoportjaim: [], szerkCache: new Map(), szerkEz: false };
 const $ = (sel, root = document) => root.querySelector(sel);
 const app = $('#app');
 
@@ -137,7 +137,7 @@ function valt(tab, render = true) {
   S.tab = tab;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   if (!render) return;
-  ({ nyitott: nyitottLap, szemelyek: szemelyekLap, harm: harmLap, szabalyok: szabalyokLap, naplo: naploLap, munkatarsak: munkatarsakLap })[tab]();
+  ({ nyitott: nyitottLap, szemelyek: szemelyekLap, harm: harmLap, szabalyok: szabalyokLap, naplo: naploLap, munkatarsak: munkatarsakLap, csoportok: csoportokLap })[tab]();
 }
 
 // ---------- Nyitott kérdések ----------
@@ -706,15 +706,17 @@ async function szemelyLap(id) {
     app.innerHTML = `<p><a href="#" id="vissza">‹ Vissza a listához</a></p>
       <div class="fejlec"><div><h2>${esc(R.nev)}</h2>
         <p class="muted">${R.szul ? esc(R.szul) : '?'}${P.reszletek && P.reszletek.halalev ? '–' + esc(ev(P.reszletek.halalev, R.szul)) : ''} · ${esc(sz.szuletesihely || '')} · SzemélyID: ${id}</p>
-        <p class="small">Csoport: ${(csop || []).map(c => S.donto
+        <p class="small">Csoport: ${(csop || []).map(c => S.szerkEz
           ? `<label class="csop-tag"><input type="checkbox" data-csop="${c.csoport_id}" ${tagja.has(c.csoport_id) ? 'checked' : ''}> ${esc(c.nev)}</label>`
           : (tagja.has(c.csoport_id) ? `<span class="badge b-info">${esc(c.nev)}</span>` : '')).join(' ') || '<span class="muted">—</span>'}
           ${S.szerkEz ? '' : ' <span class="badge b-gray">csak olvasható számodra</span>'}</p></div>
         <nav class="ugro">${R.tartalom.map(t => `<a href="#" data-ugro="${t[0]}">${esc(t[1])}</a>`).join('')}</nav></div>
       <div class="legend"><span>${forrasBadge('KIG-féle kutatás', 'KIG-féle kutatás')} KIG-féle kutatás</span><span>${forrasBadge('x', 'ElitData2026')} ElitData2026</span><span><span class="kod">kód N</span> a jelentése a KIG-kódkönyvből pótlandó</span></div>
+      ${csoportSav(id)}
       ${R.nyit.length ? `<div class="msg info">${R.nyit.length} nyitott kérdés: ${R.nyit.map(n => esc(n.tipus)).join(', ')}.</div>` : ''}
       ${R.tartalom.map(([k, cim, html, n]) => `<div id="sz-${k}">${`<section class="card szakasz"><h3>${esc(cim)}${n ? ` <span class="muted small">(${n})</span>` : ''}</h3>${html}</section>`}</div>`).join('')}`;
-    $('#vissza').addEventListener('click', e => { e.preventDefault(); szemelyekLap(); });
+    $('#vissza').addEventListener('click', e => { e.preventDefault(); if (S.csoportNav && S.csoportNav.ids.includes(id)) { valt('csoportok', false); csoportLap(S.csoportNav.cs, S.csoportNav.nezet); } else szemelyekLap(); });
+    csoportSavKezel(id);
     $('#alap-szerk')?.addEventListener('click', () => alapSzerkeszt(P, id));
     app.querySelectorAll('[data-visszavon]').forEach(b => b.addEventListener('click', async () => {
       if (!confirm('Biztosan visszavonod ezt a javítást? Az eredeti érték lesz ismét érvényes.')) return;
@@ -815,6 +817,219 @@ async function karrierSzerk(karrierid, d, utana) {
   });
 }
 
+// ---------- Csoportok: egy foglalkozáscsoport egyben történő ellenőrzése ----------
+const ELL_BADGE = { 'ellenőrizve': '<span class="badge b-ok">ellenőrizve</span>', 'kérdéses': '<span class="badge b-bad">kérdéses</span>' };
+async function csoportokLap() {
+  location.hash = '';
+  app.innerHTML = '<div class="empty">Betöltés…</div>';
+  try {
+    const [{ data: cs }, { data: tg }] = await Promise.all([
+      q(sb.from('tbl_csoportok').select('*').order('nev')),
+      q(sb.from('tbl_csoport_tagok').select('csoport_id,ellenorzes').not('elfogadott', 'is', false).range(0, 9999)),
+    ]);
+    const k = await kodok();
+    const st = id => { const t = tg.filter(x => x.csoport_id === id); return { n: t.length, ok: t.filter(x => x.ellenorzes === 'ellenőrizve').length, kerd: t.filter(x => x.ellenorzes === 'kérdéses').length }; };
+    app.innerHTML = `<h2>Csoportok</h2>
+      <p class="muted">Egy foglalkozáscsoport (pl. az orvosok) egyben történő ellenőrzése és javítása: a tagok listája ellenőrzési jelöléssel, a csoport összes karrierállomása egy táblában, és lépkedés a tagok adatlapjai között.</p>
+      <div class="csop-racs">${cs.map(c => { const x = st(c.csoport_id), pct = x.n ? Math.round(100 * x.ok / x.n) : 0; return `<div class="card click csop-kartya" data-cs="${c.csoport_id}">
+        <h3 style="margin:0 0 4px">${esc(c.nev)}</h3><p class="muted small" style="margin:0 0 8px">${esc(c.leiras || '')}</p>
+        <div class="halad"><div style="width:${pct}%"></div></div>
+        <p class="small" style="margin:6px 0 0">${x.n} fő · <b>${x.ok}</b> ellenőrizve${x.kerd ? ` · <span class="badge b-bad">${x.kerd} kérdéses</span>` : ''}</p></div>`; }).join('') || '<p class="muted">Még nincs csoport.</p>'}</div>
+      ${S.donto ? `<form class="form card" id="ucs-f" style="max-width:560px;margin-top:16px"><h3 style="margin-top:0">Új csoport</h3>
+        <label>Név<input id="ucs-n" required placeholder="pl. jogászok"></label>
+        <label>Kezdő tagság: akiknek a harmonizált Hivatás1 vagy Hivatás2 értéke<input id="ucs-h" list="dl-hiv" placeholder="pl. JOGÁSZ (üresen: üres csoport, kézzel töltöd fel)"></label>${datalist('dl-hiv', [...new Set([...k.hivatas1, ...k.hivatas2])].sort((a, b) => a.localeCompare(b, 'hu')))}
+        <label>Leírás<input id="ucs-l"></label>
+        <button class="btn primary" type="submit">Létrehozás</button><div id="ucs-msg"></div></form>` : ''}`;
+    app.querySelectorAll('[data-cs]').forEach(el => el.addEventListener('click', () => csoportLap(Number(el.dataset.cs))));
+    $('#ucs-f')?.addEventListener('submit', async e => {
+      e.preventDefault();
+      try { const { data } = await q(sb.rpc('csoport_letrehoz', { p_nev: $('#ucs-n').value, p_leiras: $('#ucs-l').value || null, p_hivatas: $('#ucs-h').value || null })); csoportLap(data); }
+      catch (err) { hibaKiir($('#ucs-msg'), err); }
+    });
+  } catch (e) { hibaKiir(app, e); }
+}
+
+async function csoportLap(csId, nezet = 'tagok') {
+  location.hash = '';
+  app.innerHTML = '<div class="empty">Betöltés…</div>';
+  try {
+    const { data: c } = await q(sb.from('tbl_csoportok').select('*').eq('csoport_id', csId).single());
+    const { data: tagok } = await q(sb.from('v_csoport_tagok').select('*').eq('csoport_id', csId).order('nev').range(0, 9999));
+    S.csoportNav = { cs: csId, nev: c.nev, ids: tagok.map(t => t.szemelyid), nezet };
+    const ok = tagok.filter(t => t.ellenorzes === 'ellenőrizve').length, pct = tagok.length ? Math.round(100 * ok / tagok.length) : 0;
+    app.innerHTML = `<p><a href="#" id="cs-vissza">‹ Csoportok</a></p>
+      <div class="fejlec"><div><h2>${esc(c.nev)}</h2><p class="muted" style="margin:0">${esc(c.leiras || '')}${c.hivatas ? ` · kezdő tagság: harmonizált hivatás = ${esc(c.hivatas)}` : ''}</p></div>
+        <div style="min-width:260px"><div class="halad"><div style="width:${pct}%"></div></div><p class="small" style="margin:4px 0 0">${tagok.length} fő · <b>${ok}</b> ellenőrizve (${pct}%)</p></div></div>
+      <div class="chips" style="margin-top:12px"><button class="chip ${nezet === 'tagok' ? 'on' : ''}" data-nezet="tagok">Tagok</button><button class="chip ${nezet === 'karrier' ? 'on' : ''}" data-nezet="karrier">Karrierállomások egy táblában</button></div>
+      <div id="cs-tartalom"></div>`;
+    $('#cs-vissza').addEventListener('click', e => { e.preventDefault(); S.csoportNav = null; csoportokLap(); });
+    app.querySelectorAll('[data-nezet]').forEach(b => b.addEventListener('click', () => csoportLap(csId, b.dataset.nezet)));
+    if (nezet === 'tagok') csoportTagok(c, tagok); else csoportKarrier(c);
+  } catch (e) { hibaKiir(app, e); }
+}
+
+function csoportTagok(c, tagok) {
+  const box = $('#cs-tartalom');
+  box.innerHTML = `<div class="toolbar"><input type="search" id="ct-q" placeholder="Név…">
+      <select id="ct-f"><option value="">Mind</option><option value="nincs">Még nincs ellenőrizve</option><option value="kérdéses">Kérdéses</option><option value="ellenőrizve">Ellenőrizve</option><option value="teendo">Van nyitott tétel</option></select>
+      ${c.hivatas && S.donto ? '<button class="btn" id="ct-frissit" title="Az azóta ezzel a hivatással besorolt személyek felvétele">Kiegészítés a hivatás alapján</button>' : ''}</div>
+    <div class="tbl-wrap" id="ct-list"></div>
+    ${S.szerkEz !== undefined ? `<form class="form card" id="ct-uj" style="max-width:560px;margin-top:16px"><h3 style="margin-top:0">Személy felvétele a csoportba</h3>
+      <label>Név<input id="ct-un" placeholder="Kezdd el írni a nevet…" autocomplete="off"></label><div id="ct-talalat"></div></form>` : ''}`;
+  const st = { q: '', f: '' };
+  const lista = () => {
+    const t = tagok.filter(r => (!st.q || r.nev.toLowerCase().includes(st.q.toLowerCase()))
+      && (!st.f || (st.f === 'nincs' ? !r.ellenorzes : st.f === 'teendo' ? (r.evkod_db || r.harm_nyitott || r.nyitott_kerdes || r.besorolatlan) : r.ellenorzes === st.f)));
+    $('#ct-list').innerHTML = t.length ? `<table><thead><tr><th>Név</th><th>Élt</th><th>Hivatás1 / Hivatás2</th><th>Karrier</th><th>Nyitott tételek</th><th>Ellenőrzés</th><th></th></tr></thead><tbody>${
+      t.map(r => `<tr class="click" data-id="${r.szemelyid}"><td><b>${esc(r.nev)}</b></td><td class="small">${dash(r.szuletesiev)}–${r.halalev ? esc(ev(r.halalev, r.szuletesiev)) : '?'}</td>
+        <td class="small">${dash(r.hivatas1)}${r.hivatas2 ? ' / ' + esc(r.hivatas2) : ''}</td><td>${r.karrier_db}</td>
+        <td>${r.evkod_db ? `<span class="badge b-warn">${r.evkod_db} évkód</span> ` : ''}${r.harm_nyitott ? `<span class="badge b-warn">${r.harm_nyitott} besorolás</span> ` : ''}${r.besorolatlan ? `<span class="badge b-gray">${r.besorolatlan} besorolatlan</span> ` : ''}${r.nyitott_kerdes ? `<span class="badge b-bad">${r.nyitott_kerdes} kérdés</span>` : ''}</td>
+        <td class="small">${ELL_BADGE[r.ellenorzes] || '<span class="muted">—</span>'}${r.ellenorizte ? `<br><span class="muted">${esc(r.ellenorizte)}</span>` : ''}${r.ellenorzes_megjegyzes ? `<br>${esc(r.ellenorzes_megjegyzes)}` : ''}</td>
+        <td><button class="btn small" data-kivesz="${r.szemelyid}" title="Nem tartozik ebbe a csoportba">Kivétel</button></td></tr>`).join('')}</tbody></table>`
+      : '<div class="empty">Nincs találat.</div>';
+    $('#ct-list tbody')?.addEventListener('click', async e => {
+      const kb = e.target.closest('[data-kivesz]');
+      if (kb) {
+        e.stopPropagation();
+        if (!confirm('Kiveszed ezt a személyt a csoportból? (A tagság visszavonásként rögzül, később visszavehető.)')) return;
+        try { await q(sb.rpc('csoport_tag', { p_csoport_id: c.csoport_id, p_szemelyid: Number(kb.dataset.kivesz), p_be: false })); csoportLap(c.csoport_id, 'tagok'); } catch (err) { alert('Hiba: ' + (err.message || err)); }
+        return;
+      }
+      const tr = e.target.closest('tr[data-id]'); if (tr) szemelyLap(Number(tr.dataset.id));
+    });
+  };
+  $('#ct-q').addEventListener('input', e => { st.q = e.target.value.trim(); lista(); });
+  $('#ct-f').addEventListener('change', e => { st.f = e.target.value; lista(); });
+  $('#ct-frissit')?.addEventListener('click', async () => {
+    try { const { data } = await q(sb.rpc('csoport_frissit', { p_csoport_id: c.csoport_id })); alert(`${data} új tag került be.`); csoportLap(c.csoport_id, 'tagok'); } catch (err) { alert('Hiba: ' + (err.message || err)); }
+  });
+  $('#ct-un')?.addEventListener('input', debounce(async e => {
+    const t = tiszta(e.target.value); const box2 = $('#ct-talalat');
+    if (t.length < 3) { box2.innerHTML = ''; return; }
+    const w = t.split(/\s+/);
+    let qq = sb.from('v_szemely_lista').select('szemelyid,vezeteknev,keresztnev,szuletesiev');
+    qq = w.length > 1 ? qq.ilike('vezeteknev', `%${w[0]}%`).ilike('keresztnev', `%${w.slice(1).join(' ')}%`) : qq.or(`vezeteknev.ilike.%${w[0]}%,keresztnev.ilike.%${w[0]}%`);
+    const { data } = await q(qq.limit(10));
+    box2.innerHTML = (data || []).map(r => `<button type="button" class="btn small" data-felvesz="${r.szemelyid}" style="margin:2px">${esc(r.vezeteknev + ' ' + r.keresztnev)} (${dash(r.szuletesiev)})${S.csoportNav.ids.includes(r.szemelyid) ? ' – már tag' : ''}</button>`).join('') || '<span class="muted small">Nincs találat.</span>';
+    box2.querySelectorAll('[data-felvesz]').forEach(b => b.addEventListener('click', async () => {
+      try { await q(sb.rpc('csoport_tag', { p_csoport_id: c.csoport_id, p_szemelyid: Number(b.dataset.felvesz), p_be: true })); csoportLap(c.csoport_id, 'tagok'); } catch (err) { alert('Hiba: ' + (err.message || err)); }
+    }));
+  }));
+  lista();
+}
+
+// a csoport összes karrierállomása, helyben javítható mezőkkel; egy forrás a teljes mentéshez
+const KPAGE = 150;
+async function csoportKarrier(c) {
+  const box = $('#cs-tartalom');
+  await kodtablak();
+  box.innerHTML = `<div class="toolbar"><input type="search" id="ck-q" placeholder="Név, foglalkozás vagy munkahely…">
+      <select id="ck-f"><option value="">Minden állomás</option><option value="evkod">Feloldatlan évkód</option><option value="nyitott">Nyitott besorolás</option><option value="nincs">Nincs besorolva</option><option value="javitott">Javított</option></select></div>
+    <p class="muted small">A szürke mezők közvetlenül átírhatók. A megváltoztatott sorok kiemelődnek; a „Mentés” a lent megadott forrással, új bejegyzésként rögzíti őket (az eredeti adat megmarad). A harmonizált értékek a sorra kattintva, a besorolásnál módosíthatók.</p>
+    <div class="tbl-wrap" id="ck-list"></div><div id="ck-pager"></div>
+    <div class="card ck-mentes" id="ck-mentes">${forrasValaszto('ck')}
+      <div class="toolbar" style="margin:10px 0 0"><button class="btn primary" id="ck-ment" disabled>Mentés (0 sor)</button><button class="btn" id="ck-elvet" disabled>Változások elvetése</button></div><div id="ck-msg"></div></div>
+    <div id="detail" style="margin-top:12px"></div>`;
+  $('#ck-fs').addEventListener('change', e => $('#ck-uj').classList.toggle('hidden', e.target.value !== 'uj'));
+  const st = { page: 0, q: '', f: '' };
+  const valtozott = new Map(); // karrierid -> {mezo: érték}
+  const gombok = () => { const n = valtozott.size; $('#ck-ment').textContent = `Mentés (${n} sor)`; $('#ck-ment').disabled = !n; $('#ck-elvet').disabled = !n; };
+  const lista = async () => {
+    if (valtozott.size && !confirm('Vannak mentetlen változások ezen az oldalon. Elveted őket?')) return false;
+    valtozott.clear(); gombok();
+    const lb = $('#ck-list'); lb.innerHTML = '<div class="empty">Betöltés…</div>';
+    let qq = sb.from('v_csoport_karrier').select('*', { count: 'exact' }).eq('csoport_id', c.csoport_id);
+    if (st.q) qq = qq.or(`nev.ilike.%${st.q}%,foglalkozas.ilike.%${st.q}%,munkahely.ilike.%${st.q}%`);
+    if (st.f === 'evkod') qq = qq.like('leiras', '? kód:%').is('javitott_mezok', null);
+    if (st.f === 'nyitott') qq = qq.not('harm_allapot', 'is', null).neq('harm_allapot', 'rendben');
+    if (st.f === 'nincs') qq = qq.is('harm_id', null);
+    if (st.f === 'javitott') qq = qq.not('javitott_mezok', 'is', null);
+    try {
+      const { data, count } = await q(qq.order('nev').order('szemelyid').order('elsoev', { nullsFirst: false }).order('sorszam').range(st.page * KPAGE, st.page * KPAGE + KPAGE - 1));
+      const cella = (k, m, cls = '') => { const v = k[m] === null || k[m] === undefined ? '' : String(m.endsWith('ev') ? ev(k[m], k.szuletesiev) : k[m]);
+        return `<td class="${cls}"><input class="ck-in ${(k.javitott_mezok || []).includes(m) ? 'jav' : ''}" data-k="${k.karrierid}" data-m="${m}" data-eredeti="${esc(v)}" value="${esc(v)}" ${m.endsWith('ev') ? 'inputmode="numeric" size="4"' : ''} title="${(k.javitott_mezok || []).includes(m) ? 'Javított érték; eredetileg: ' + esc(k.eredeti?.[m] ?? '—') : ''}"></td>`; };
+      let elozo = null;
+      lb.innerHTML = data.length ? `<table class="ck-tbl"><thead><tr><th>Név</th><th>Első év</th><th>Utolsó év</th><th>Foglalkozás</th><th>Munkahely</th><th>Helyszín</th><th>Harmonizált</th><th>Hivatás1</th><th>Hivatás2</th><th>Besorolás</th></tr></thead><tbody>${
+        data.map(k => { const uj = k.szemelyid !== elozo; elozo = k.szemelyid;
+          return `<tr data-h="${k.harm_id || ''}" data-sz="${k.szemelyid}" class="${uj ? 'uj-szemely' : ''}"><td>${uj ? `<a href="#szemely=${k.szemelyid}" data-szem="${k.szemelyid}"><b>${esc(k.nev)}</b></a> <span class="muted small">${dash(k.szuletesiev)}</span>` : ''}
+            ${k.leiras && k.leiras.startsWith('? kód') && !(k.javitott_mezok || []).length ? `<br><span class="badge b-warn">${esc(k.leiras)}</span>` : ''}</td>
+            ${cella(k, 'elsoev')}${cella(k, 'utolsoev')}${cella(k, 'foglalkozas', 'w-fogl')}${cella(k, 'munkahely', 'w-mh')}${cella(k, 'helyszin')}
+            <td class="small">${dash(k.harmonizalt)}</td><td class="small">${dash(k.hivatas1)}</td><td class="small">${dash(k.hivatas2)}</td>
+            <td class="small">${k.harm_id ? `<a href="#" data-harm="${k.harm_id}">${allapotBadge(k.harm_allapot)}</a>` : '<span class="muted">nincs</span>'}</td></tr>`; }).join('')}</tbody></table>`
+        : '<div class="empty">Nincs találat.</div>';
+      szemLinkek(lb);
+      lb.querySelectorAll('.ck-in').forEach(inp => inp.addEventListener('input', () => {
+        const kid = Number(inp.dataset.k), sor = valtozott.get(kid) || {};
+        if (inp.value.trim() !== inp.dataset.eredeti) sor[inp.dataset.m] = inp.value.trim(); else delete sor[inp.dataset.m];
+        inp.classList.toggle('valt', inp.value.trim() !== inp.dataset.eredeti);
+        if (Object.keys(sor).length) valtozott.set(kid, sor); else valtozott.delete(kid);
+        gombok();
+      }));
+      lb.querySelectorAll('[data-harm]').forEach(a => a.addEventListener('click', e => {
+        e.preventDefault();
+        harmReszlet(Number(a.dataset.harm), $('#detail'), () => { $('#detail').innerHTML = ''; lista(); }).catch(err => hibaKiir($('#detail'), err));
+        $('#detail').scrollIntoView({ behavior: 'smooth' });
+      }));
+      $('#ck-pager').innerHTML = ''; $('#ck-pager').appendChild(pager(count, st.page, p => { const regi = st.page; st.page = p; lista().then(r => { if (r === false) st.page = regi; }); }));
+    } catch (e) { hibaKiir(lb, e); }
+  };
+  $('#ck-q').addEventListener('input', debounce(e => { st.q = tiszta(e.target.value); st.page = 0; lista(); }));
+  $('#ck-f').addEventListener('change', e => { st.f = e.target.value; st.page = 0; lista(); });
+  $('#ck-elvet').addEventListener('click', () => { valtozott.clear(); lista(); });
+  $('#ck-ment').addEventListener('click', async () => {
+    const btn = $('#ck-ment');
+    try {
+      for (const [kid, sor] of valtozott) for (const m of ['elsoev', 'utolsoev']) {
+        if (sor[m] && !/^\d{4}$/.test(sor[m])) throw new Error(`Négyjegyű évszámot adj meg (${sor[m]}).`);
+        // évkód feloldásakor a másik évet is rögzítjük
+        const masik = m === 'elsoev' ? 'utolsoev' : 'elsoev', inp = document.querySelector(`.ck-in[data-k="${kid}"][data-m="${masik}"]`);
+        if (sor[m] !== undefined && sor[masik] === undefined && inp && inp.value.trim()) sor[masik] = inp.value.trim();
+      }
+      btn.disabled = true;
+      const fid = await forrasAzonosito('ck');
+      let n = 0;
+      for (const [kid, sor] of valtozott) {
+        await q(sb.rpc('javit_sor', { p_tabla: 'tbl_karrier', p_rekord_id: kid, p_valtozasok: sor, p_forras_id: fid, p_hivatkozas: $('#ck-hiv').value || null, p_megjegyzes: $('#ck-megj').value || null }));
+        n++;
+      }
+      valtozott.clear();
+      msg($('#ck-msg'), `${n} karrierállomás javítása rögzítve.`, 'ok');
+      lista();
+    } catch (err) { btn.disabled = false; hibaKiir($('#ck-msg'), err); }
+  });
+  lista();
+}
+
+// a profil tetején: lépkedés a csoport tagjai között, ellenőrzés jelölése
+function csoportSav(id) {
+  const N = S.csoportNav; if (!N || !N.ids.includes(id)) return '';
+  const i = N.ids.indexOf(id);
+  return `<div class="card csop-sav"><div><b>${esc(N.nev)}</b> <span class="muted">· ${i + 1} / ${N.ids.length}</span> <span id="cs-allapot"></span></div>
+    <div class="toolbar" style="margin:0">
+      <button class="btn" id="cs-elozo" ${i === 0 ? 'disabled' : ''}>‹ Előző</button>
+      ${S.szerkEz ? `<input id="cs-megj" placeholder="Megjegyzés (pl. mit kell még megnézni)">
+      <button class="btn" id="cs-kerd">Kérdéses</button><button class="btn primary" id="cs-ok">Ellenőrizve ✓ és tovább</button>` : ''}
+      <button class="btn" id="cs-kov" ${i === N.ids.length - 1 ? 'disabled' : ''}>Következő ›</button></div></div>`;
+}
+async function csoportSavKezel(id) {
+  const N = S.csoportNav; if (!N || !N.ids.includes(id)) return;
+  const i = N.ids.indexOf(id);
+  const { data: t } = await q(sb.from('tbl_csoport_tagok').select('ellenorzes,ellenorzes_megjegyzes,ellenorizte,ellenorzes_ideje').eq('csoport_id', N.cs).eq('szemelyid', id).maybeSingle());
+  if (t) {
+    $('#cs-allapot').innerHTML = (ELL_BADGE[t.ellenorzes] || '<span class="badge b-gray">még nincs ellenőrizve</span>') + (t.ellenorizte ? ` <span class="muted small">${esc(t.ellenorizte)}, ${new Date(t.ellenorzes_ideje).toLocaleDateString('hu-HU')}</span>` : '');
+    if ($('#cs-megj')) $('#cs-megj').value = t.ellenorzes_megjegyzes || '';
+  }
+  const megy = j => { if (j >= 0 && j < N.ids.length) { szemelyLap(N.ids[j]); window.scrollTo(0, 0); } };
+  $('#cs-elozo')?.addEventListener('click', () => megy(i - 1));
+  $('#cs-kov')?.addEventListener('click', () => megy(i + 1));
+  const jelol = async (allapot, tovabb) => {
+    try { await q(sb.rpc('csoport_ellenoriz', { p_csoport_id: N.cs, p_szemelyid: id, p_allapot: allapot, p_megjegyzes: $('#cs-megj').value || null })); tovabb && i < N.ids.length - 1 ? megy(i + 1) : szemelyLap(id); }
+    catch (err) { alert('Hiba: ' + (err.message || err)); }
+  };
+  $('#cs-ok')?.addEventListener('click', () => jelol('ellenőrizve', true));
+  $('#cs-kerd')?.addEventListener('click', () => jelol('kérdéses', false));
+}
+
 // ---------- Munkatársak (csak korlátozás nélküli munkatárs) ----------
 async function munkatarsakLap() {
   if (!S.donto) { app.innerHTML = '<div class="empty">Ehhez nincs jogosultságod.</div>'; return; }
@@ -829,8 +1044,8 @@ async function munkatarsakLap() {
     await Promise.all(cs.map(async c => { const { count } = await q(sb.from('tbl_csoport_tagok').select('szemelyid', { count: 'exact', head: true }).eq('csoport_id', c.csoport_id).not('elfogadott', 'is', false)); tagszam[c.csoport_id] = count; }));
     const van = (e, c) => mc.some(x => x.email === e && x.csoport_id === c);
     app.innerHTML = `<h2>Munkatársak és jogosultságok</h2>
-      <p class="muted">Aki mellett nincs bejelölve csoport, az minden személy adatait javíthatja, és szabálydöntést is hozhat. Akinél csoport van bejelölve, az csak az adott csoport tagjainak adatait javíthatja (olvasni mindent olvashat), szabálydöntést nem hozhat.</p>
-      <div class="tbl-wrap"><table><thead><tr><th>E-mail</th><th>Név</th><th>Aktív</th>${cs.map(c => `<th>Csak: ${esc(c.nev)} <span class="muted small">(${tagszam[c.csoport_id] ?? '?'} fő)</span></th>`).join('')}</tr></thead><tbody>${
+      <p class="muted">Alapesetben mindenki egyforma: mindent javíthat és dönthet. A jobb oldali oszlopok egy <b>választható korlátozást</b> jelentenek: akinél bejelölsz egy csoportot, az csak annak tagjait javíthatja és szabálydöntést nem hozhat. Az ellenőrzési munkához nem kell beállítani (azt a Csoportok fülön bárki végezheti).</p>
+      <div class="tbl-wrap"><table><thead><tr><th>E-mail</th><th>Név</th><th>Aktív</th>${cs.map(c => `<th>Korlátozás: csak ${esc(c.nev)} <span class="muted small">(${tagszam[c.csoport_id] ?? '?'} fő)</span></th>`).join('')}</tr></thead><tbody>${
         mt.map(m => `<tr><td>${esc(m.email)}</td><td>${dash(m.nev)}</td><td><input type="checkbox" data-aktiv="${esc(m.email)}" ${m.aktiv ? 'checked' : ''} ${m.email === S.user.email.toLowerCase() ? 'disabled' : ''}></td>${
           cs.map(c => `<td><input type="checkbox" data-mc="${esc(m.email)}|${c.csoport_id}" ${van(m.email, c.csoport_id) ? 'checked' : ''} ${m.email === S.user.email.toLowerCase() ? 'disabled' : ''}></td>`).join('')}</tr>`).join('')
       }</tbody></table></div>
