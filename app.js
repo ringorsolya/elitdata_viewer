@@ -407,7 +407,7 @@ async function szemelyekLap() {
 // A kódtáblák egyszer töltődnek be; ahol nincs megbízható kódtábla, a kód „kód N” formában látszik (lásd KODKONYV_HIANY).
 async function kodtablak() {
   if (S.kt) return S.kt;
-  const [vm, kit, kk, part, szerz, zst, fr] = await Promise.all([
+  const [vm, kit, kk, part, szerz, zst, fr, egy, idp, osz] = await Promise.all([
     q(sb.from('kod_varmegyek').select('kodertek,kodnev')),
     q(sb.from('tbl_kod_kituntetes').select('lista,kituntetekod,kituntetenev')),
     q(sb.from('tbl_kod_kulfoldikit').select('orszag,kodertek,kituntetenev')),
@@ -415,6 +415,9 @@ async function kodtablak() {
     q(sb.from('tbl_kod_szerzetesrendek').select('kodertek,kodnev')),
     q(sb.from('tbl_kod_zsidotorvenyek').select('kodertek,kodnev,tipus')),
     q(sb.from('tbl_forrasok').select('forras_id,megnevezes,fazis,tipus')),
+    q(sb.from('tbl_egyetemek').select('egyetemid,egyetemnev,egyetemnevharmonizalt').range(0, 4999)),
+    q(sb.from('tbl_foglalkozas_idopont').select('idopontkod,idopontnev,sorrend').order('sorrend')),
+    q(sb.from('v_szerk_oszlopok').select('*').order('sorrend').range(0, 4999)),
   ]);
   const m = (rows, k, v) => new Map(rows.map(r => [Number(r[k]), r[v]]));
   S.kt = {
@@ -425,6 +428,9 @@ async function kodtablak() {
     szerzetes: m(szerz.data, 'kodertek', 'kodnev'),
     zst: m(zst.data, 'kodertek', 'kodnev'),
     forras: new Map(fr.data.map(r => [r.forras_id, r])),
+    egyetem: new Map(egy.data.map(r => [Number(r.egyetemid), r.egyetemnevharmonizalt || r.egyetemnev])),
+    idopont: idp.data,
+    oszlopok: osz.data.reduce((m, r) => { (m[r.tabla] = m[r.tabla] || []).push(r); return m; }, {}),
   };
   return S.kt;
 }
@@ -457,7 +463,7 @@ function profilRender(P, id) {
     if (!sorok || !sorok.length) return '<p class="muted">Nincs adat.</p>';
     const aktiv = oszlopok.filter(o => sorok.some(s => { const v = o.f ? o.f(s) : s[o.k]; return v !== null && v !== undefined && v !== ''; }));
     return `<div class="tbl-wrap"><table><thead><tr>${aktiv.map(o => `<th>${esc(o.c)}</th>`).join('')}<th>Forrás</th></tr></thead><tbody>${
-      sorok.map(s => `<tr>${aktiv.map(o => { const v = o.f ? o.f(s) : txt(s[o.k]); return `<td class="${o.cls || ''}">${v ?? '<span class="muted">—</span>'}</td>`; }).join('')}<td>${fb(s.forras_id)}</td></tr>`).join('')}</tbody></table></div>`;
+      sorok.map(s => `<tr>${aktiv.map(o => { const v = o.f ? o.f(s) : txt(s[o.k]); return `<td class="${o.cls || ''}">${v ?? '<span class="muted">—</span>'}</td>`; }).join('')}<td>${fb(s.forras_id)}${javJel(s)}</td></tr>`).join('')}</tbody></table></div>`;
   };
   const szakasz = (cim, html, db) => `<section class="card szakasz"><h3>${esc(cim)}${db ? ` <span class="muted small">(${db})</span>` : ''}</h3>${html}</section>`;
   const pozkod = s => ['1914', '1922', '1928', '1933', '1938', '1942', '1947'].filter(y => s['pozkod_' + y] !== null && s['pozkod_' + y] !== undefined).map(y => `${y}: ${s['pozkod_' + y]}`).join(', ') || null;
@@ -527,7 +533,7 @@ function profilRender(P, id) {
     { c: 'Név', f: s => esc(s.nev) },
     { c: 'Született', f: s => [s.szuletesiev ? ev(s.szuletesiev) : null, s.szuletesihely].filter(Boolean).map(esc).join(', ') || null },
     { c: 'Házasságból', f: s => s.hazassagbol ? esc(s.hazassagbol) + '.' : null },
-    { c: 'Foglalkozás', f: s => (s.foglalkozasok || []).map(f => `${esc(f.foglalkozas)} <span class="muted small">(${esc((f.mikor || '').replace(' foglalkozás', ''))})</span>`).join('; ') || null, cls: 'small' },
+    { c: 'Foglalkozás', f: s => (s.foglalkozasok || []).map(f => `${esc(f.foglalkozas)} <span class="muted small">(${esc((f.mikor || '').replace(' foglalkozás', ''))})</span>${javJel(f)}`).join('; ') || null, cls: 'small' },
   ]);
   const kitKulfNev = s => {
     const orszag = kt.hely.get(Number(s.orszagkod));
@@ -688,6 +694,271 @@ function alapSzerkeszt(P, id) {
   });
 }
 
+// ---------- Minden blokk szerkesztése ----------
+// Listatáblák: kulcs a szemely_osszes válaszában -> [tábla, cím]
+const LISTA = {
+  vallas: ['tbl_vallas', 'Vallás'], nemesseg: ['tbl_nemesseg', 'Nemesség'], nevvaltoztatasok: ['tbl_nevvaltoztatasok', 'Névváltoztatás'],
+  tanulmanyok: ['tbl_tanulmanyok', 'Tanulmányok'], karrier: ['tbl_karrier', 'Karrierállomások'], karrierpoziciok: ['tbl_karrierpoziciok', 'Karrierpozíciók'],
+  kituntetes_hazai: ['tbl_kituntetes_hazai', 'Hazai kitüntetések'], kituntetes_kulfoldi: ['tbl_kituntetes_kulfoldi', 'Külföldi kitüntetések'],
+  csapat_ermek: ['tbl_csapat_ermek', 'Címek, érmek (CA/CE)'], dijak: ['tbl_dijak', 'Díjak'], diszdoktoratus: ['tbl_diszdoktoratus', 'Díszdoktorátus'],
+  akad_kituntetesek: ['tbl_akad_kituntetesek', 'Külföldi akadémiai tagság'], katonai: ['tbl_katonaiszolgalat', 'Katonai szolgálat'],
+  kulfold: ['tbl_kulfolditartozkodasok', 'Külföldi tartózkodás'], szervezet_belfold: ['tbl_szervezeti_tagsag_belfold', 'Belföldi szervezetek'],
+  szervezet_kulfold: ['tbl_szervezeti_tagsag_kulfold', 'Külföldi szervezetek'], parttagsag: ['tbl_parttagsag_tol_ig', 'Párttagság'],
+  part_megfigyeles: ['tbl_part_megfigyelesi_ev', 'Párthovatartozás megfigyelési évenként'], felsohaz_tagsag: ['tbl_felsohaz_tagsag', 'Felsőházi tagság'],
+  felsohaz_pozicio: ['tbl_felsohaz_pozicio', 'Felsőházi pozíció'], parl_bizottsag: ['tbl_parl_bizottsag_pozicio', 'Parlamenti bizottság'],
+  egyeb_politikai: ['tbl_egyeb_politikai_poz', 'Egyéb politikai adatok'], perek: ['tbl_perek_iteletek', 'Perek, ítéletek'],
+  zsidotorvenyek: ['tbl_zsidotorvenyek', 'Zsidótörvények'], vagyon: ['tbl_vagyoni_helyzet', 'Vagyoni helyzet'], lakas: ['tbl_lakas', 'Lakás'],
+  haztartas: ['tbl_haztartas_tagok', 'Háztartás'],
+};
+const PK = { tbl_karrier: 'karrierid', tbl_vallas: 'vallasid', tbl_nemesseg: 'nemessegid', tbl_nevvaltoztatasok: 'nevvaltoztatasid', tbl_tanulmanyok: 'tanulmanyid',
+  tbl_csaladi_kapcsolatok_kodolt: 'kapcsolatid', tbl_foglalkozasok: 'foglalkozasid', tbl_katonaiszolgalat: 'katonaiid', tbl_kulfolditartozkodasok: 'tartoskodasid',
+  tbl_vagyoni_helyzet: 'vagyonid', tbl_lakas: 'lakasid', tbl_haztartas_tagok: 'haztartasid' };
+const pk = t => PK[t] || 'azonosító';
+// a profil szakaszai és a bennük szerkeszthető adatok
+const SZAKASZ_SZERK = {
+  csalad: { kv: [['testverekszama', 'Testvérek száma'], ['hazassagokszama', 'Házasságok száma'], ['elsohazassagev', 'Első házasság éve', 'ev'], ['hazaskor', 'Életkor a házasságkötéskor'],
+    ['gyerekekszama', 'Gyerekek száma'], ['csaladiallapot1928', 'Családi állapot 1928 (kód)'], ['csaladiallapot1938', 'Családi állapot 1938 (kód)'], ['csaladiallapot1942', 'Családi állapot 1942 (kód)'],
+    ['apahalalev', 'Apa halála (kategória, kód)'], ['anyahalalev', 'Anya halála (kategória, kód)']], rokon: true, listak: [] },
+  vallas: { listak: ['vallas'] }, nemesseg: { listak: ['nemesseg', 'nevvaltoztatasok'] }, tanulmanyok: { listak: ['tanulmanyok'] },
+  karrier: { listak: ['karrier', 'karrierpoziciok'] },
+  kituntetes: { listak: ['kituntetes_hazai', 'kituntetes_kulfoldi', 'csapat_ermek', 'dijak', 'diszdoktoratus', 'akad_kituntetesek'] },
+  szervezet: { listak: ['szervezet_belfold', 'szervezet_kulfold'] },
+  politika: { listak: ['parttagsag', 'part_megfigyeles', 'felsohaz_tagsag', 'felsohaz_pozicio', 'parl_bizottsag', 'egyeb_politikai', 'perek', 'zsidotorvenyek'] },
+  katonai: { listak: ['katonai'] }, kulfold: { listak: ['kulfold'] }, vagyon: { listak: ['vagyon', 'lakas', 'haztartas'] },
+};
+const KARRIER_OSZL = ['elsoev', 'utolsoev', 'foglalkozas', 'munkahely', 'helyszin'];
+const CIMKE = { ev: 'Év', sorszam: 'Sorszám', kituntetekod: 'Kitüntetés (kód)', orszagkod: 'Ország', helyszinkod: 'Helyszín', lista: 'Lista', tipus: 'Típus',
+  dijakkod: 'Adományozó', dijaknev: 'Díj neve', egyetemkod: 'Egyetem', szervezetnev: 'Szervezet', belepesev: 'Belépés éve', alhelyszin: 'Alhelyszín (kód)',
+  partkod: 'Párt', tol: 'Tól', ig: 'Ig', thb_yn: 'Tag', jelkod: 'Pozíció (kód)', bizottsagkod: 'Bizottság (kód)', szerep: 'Szerep', ertek: 'Érték',
+  tipuskod: 'Eljárás típusa', ugycod: 'Ügy (kód)', ho: 'Hónap', jelenlegivallas: 'Felekezet', vallasvaltoztatassorszam: 'Áttérés sorszáma',
+  vallasvaltoztataseve: 'Áttérés éve', regivallas: 'Régi vallás', ujvallas: 'Új vallás', nemese: 'Nemes', nemessegeve: 'Nemesség éve', fonemese: 'Főnemesi rang (kód)',
+  fonemessegeve: 'Főnemesség éve', nevvaltoztatassorszam: 'Sorszám', nevvaltoztataseve: 'Névváltoztatás éve', reginev: 'Régi név (kód)',
+  velelmezetettnemzetiseg: 'Vélelmezett nemzetiség', iskolatipus: 'Szint', iskolaid: 'Iskola (kód)', egyetemid: 'Egyetem', 'vegzettségkod': 'Végzettség (kód)',
+  munkatipuskod: 'Munkatípus (kód)', kezdoev: 'Kezdés éve', befejezesev: 'Befejezés éve', tanitasinyelv: 'Tanítási nyelv (kód)', szak: 'Szak',
+  diplomaev: 'Diploma éve', diplomafajta: 'Diploma fajtája (kód)', vegev: 'Vége', vilaghaborukod: 'Világháború', kategoria: 'Kategória (kód)',
+  rendfokozat: 'Rendfokozat (kód)', frontzaszlo1: 'Front 1', frontzaszlo1honap: 'Front 1 (hónap)', frontzaszlo2: 'Front 2', frontzaszlo2honap: 'Front 2 (hónap)',
+  sebesulesekszama: 'Sebesülések', viteze: 'Vitéz', munkaszolgalate: 'Munkaszolgálat', hadifoge: 'Hadifogság', fizetes: 'Fizetés', orokles: 'Öröklés',
+  haztartas: 'Háztartás', igazgatosagitag: 'Igazgatósági tagság', forgotokkorhaz: 'Forgalmi adó (kórház)', forgotokakademia: 'Forgalmi adó (akadémia)',
+  adoalap: 'Adóalap', jelenlevokszama: 'Jelenlévők', tavollevokszama: 'Távollévők', haztartasialkalmazottak: 'Háztartási alkalmazottak', gyerekek: 'Gyerekek',
+  masrokon: 'Más rokon', hazastars: 'Házastárs', apa: 'Apa', anya: 'Anya', apos: 'Após', anyos: 'Anyós', nagyapa: 'Nagyapa', nagyanya: 'Nagyanya',
+  elsoev: 'Első év', utolsoev: 'Utolsó év', foglalkozas: 'Foglalkozás', munkahely: 'Munkahely', helyszin: 'Helyszín', idopontkod: 'Mikor', leiras: 'Leírás',
+  kezdeteve: 'Kapcsolat kezdete', vegeeve: 'Kapcsolat vége', gyermekmelyikhazassagbol: 'Melyik házasságból',
+  ...Object.fromEntries(['1914', '1922', '1928', '1933', '1938', '1942', '1947'].map(y => ['pozkod_' + y, 'Pozíció ' + y + ' (kód)'])),
+};
+function cimke(m) { return CIMKE[m] || LAKAS[m] || ZST[m] || m; }
+function mezoTipus(tabla, m) {
+  if (['orszagkod', 'helyszinkod', 'halalhelymegyekod', 'szuletesiorszagkod'].includes(m)) return 'hely';
+  if (m === 'partkod') return 'part';
+  if (['jelenlegivallas', 'regivallas', 'ujvallas'].includes(m)) return 'vallas';
+  if (tabla === 'tbl_kituntetes_hazai' && m === 'kituntetekod') return 'kithazai';
+  if (m === 'iskolatipus') return 'iskolatipus';
+  if (m === 'egyetemid') return 'egyetem';
+  if (m === 'idopontkod') return 'idopont';
+  if (['nemese', 'viteze', 'munkaszolgalate', 'thb_yn', 'doktoricim', 'szerzetese'].includes(m)) return 'bool';
+  if (!/nev$/.test(m) && (/(ev|eve|_tol|_ig)$/.test(m) || ['tol', 'ig'].includes(m))) return 'ev';
+  return 'text';
+}
+// a sorjavítások alkalmazása a megjelenített adatokra (az eredeti érték a sor _eredeti mezőjében marad)
+function utolsoJavitasok(J) {
+  const m = new Map();
+  for (const j of J) { if (j.elfogadott === false || j.mezo === '_uj') continue; m.set(`${j.tabla}|${j.rekord_id}|${j.mezo}`, j); }
+  return m;
+}
+function sorAlkalmaz(row, tabla, L) {
+  const id = row[pk(tabla)];
+  if (L.has(`${tabla}|${id}|_torles`)) return null;
+  const out = { ...row, _jav: [], _eredeti: {} };
+  for (const k of Object.keys(row)) {
+    const j = L.get(`${tabla}|${id}|${k}`);
+    if (j) { out._eredeti[k] = row[k]; out[k] = j.ertek; out._jav.push(k); }
+  }
+  for (const [key, j] of L) { const [t, r, m] = key.split('|'); if (t === tabla && Number(r) === Number(id) && !(m in row) && !m.startsWith('_')) { out[m] = j.ertek; out._jav.push(m); } }
+  return out;
+}
+function sorJavitasokAlkalmaz(P) {
+  const L = utolsoJavitasok(P.sorjavitasok || []);
+  for (const [key, [tabla]] of Object.entries(LISTA)) {
+    if (key === 'karrier' || !P[key]) continue;
+    P[key] = P[key].map(r => sorAlkalmaz(r, tabla, L)).filter(Boolean);
+  }
+  (P.tanulmanyok || []).forEach(t => { if (t._jav.includes('egyetemid')) t.egyetem = S.kt.egyetem.get(Number(t.egyetemid)) || (t.egyetemid ? 'egyetem ' + t.egyetemid : null); });
+  // rokonok: a kapcsolat törlése, a rokon alapadatainak javítása, foglalkozásaik
+  const RA = new Map();
+  (P.rokon_allitasok || []).filter(a => a.elfogadott !== false && a.tabla === 'tbl_szemelyek').forEach(a => RA.set(`${a.szemelyid}|${a.mezo}`, a.ertek));
+  P.csalad = (P.csalad || []).filter(c => !L.has(`tbl_csaladi_kapcsolatok_kodolt|${c.kapcsolatid}|_torles`)).map(c => {
+    const o = { ...c, _jav: [] };
+    for (const m of ['vezeteknev', 'keresztnev', 'szuletesiev', 'szuletesihely']) if (RA.has(`${c.rokonid}|${m}`)) { o[m] = RA.get(`${c.rokonid}|${m}`); o._jav.push(m); }
+    for (const [m, k] of [['gyermekmelyikhazassagbol', 'hazassagbol'], ['kezdeteve', 'kezdeteve'], ['vegeeve', 'vegeeve']]) {
+      const j = L.get(`tbl_csaladi_kapcsolatok_kodolt|${c.kapcsolatid}|${m}`); if (j) { o[k] = j.ertek; o._jav.push(k); }
+    }
+    o.nev = `${o.vezeteknev || ''} ${o.keresztnev || ''}`.trim();
+    o.foglalkozasok = (c.foglalkozasok || []).map(f => sorAlkalmaz(f, 'tbl_foglalkozasok', L)).filter(Boolean)
+      .map(f => ({ ...f, mikor: (S.kt.idopont.find(i => i.idopontkod === f.idopontkod) || {}).idopontnev || f.idopontkod }));
+    return o;
+  });
+}
+function javJel(s) {
+  if (!s || !s._jav || !s._jav.length) return '';
+  return ` <span class="badge b-info" title="${esc('Javítva: ' + s._jav.map(m => `${cimke(m)} (eredetileg: ${s._eredeti?.[m] ?? '—'})`).join('; '))}">javítva</span>`;
+}
+
+// egy mező beviteli eleme
+function bevitel(tip, v, szul) {
+  const kt = S.kt, ertek = v === null || v === undefined ? '' : String(v);
+  const opt = (pairs) => `<select><option value="">—</option>${pairs.map(([k, n]) => `<option value="${esc(k)}" ${String(k) === ertek ? 'selected' : ''}>${esc(n)}</option>`).join('')}${ertek && !pairs.some(([k]) => String(k) === ertek) ? `<option value="${esc(ertek)}" selected>kód ${esc(ertek)}</option>` : ''}</select>`;
+  if (tip === 'hely') return opt([...kt.hely.entries()].sort((a, b) => a[1].localeCompare(b[1], 'hu')));
+  if (tip === 'part') return opt([...kt.part.entries()]);
+  if (tip === 'kithazai') return opt([...kt.kitHazai.entries()]);
+  if (tip === 'vallas') return opt(Object.entries(VALLAS).map(([k, n]) => [k, n + ' (vélelmezett)']));
+  if (tip === 'iskolatipus') return opt([['altalanos', 'alapfok'], ['kozep', 'középfok'], ['felso', 'felsőfok']]);
+  if (tip === 'egyetem') return opt([...kt.egyetem.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'hu')));
+  if (tip === 'idopont') return opt(kt.idopont.map(i => [i.idopontkod, i.idopontnev]));
+  if (tip === 'bool') return opt([['1', 'igen'], ['0', 'nem']]);
+  if (tip === 'viszony') return opt([['apa', 'apa'], ['anya', 'anya'], ['házastárs', 'házastárs'], ['gyermek', 'gyermek']]);
+  if (tip === 'ev') return `<input inputmode="numeric" placeholder="éééé" value="${esc(ertek === '' ? '' : ev(ertek, szul))}">`;
+  return `<input value="${esc(ertek)}">`;
+}
+function mezoHtml(m, cim, tip, v, szul) {
+  const eredeti = v === null || v === undefined ? '' : String(tip === 'ev' && v !== '' ? ev(v, szul) : v);
+  return `<label data-m="${esc(m)}" data-tip="${tip}" data-eredeti="${esc(eredeti)}">${esc(cim)}${bevitel(tip, v, szul)}</label>`;
+}
+// egy sor kártyája: a kitöltött mezők látszanak, az üresek lenyithatók
+function sorKartya(tabla, oszl, row, szul, opts = {}) {
+  const uj = !row;
+  const mezok = oszl.map(m => ({ m, tip: mezoTipus(tabla, m), v: row ? row[m] : null }));
+  const tele = mezok.filter(x => x.v !== null && x.v !== undefined && x.v !== ''), ures = mezok.filter(x => !tele.includes(x));
+  const html = a => a.map(x => mezoHtml(x.m, cimke(x.m), x.tip, x.v, szul)).join('');
+  const J = (opts.javitasok || []);
+  return `<div class="sor-kartya ${uj ? 'uj' : ''}" data-tabla="${tabla}" data-id="${uj ? '' : esc(row[pk(tabla)])}" data-szemely="${opts.szemely || ''}">
+    ${opts.fejlec ? `<div class="sor-fej">${opts.fejlec}</div>` : ''}
+    <div class="szerk-racs">${uj && mezok.length <= 14 ? html(mezok) : html(tele)}</div>
+    ${!(uj && mezok.length <= 14) && ures.length ? `<details ${uj ? 'open' : ''}><summary class="small muted">${uj ? 'Mezők' : `Üres mezők (${ures.length})`}</summary><div class="szerk-racs">${html(ures)}</div></details>` : ''}
+    ${J.length ? `<div class="small muted">Javítások: ${J.map(j => `${esc(cimke(j.mezo === '_torles' ? 'törlés' : j.mezo))}${j.mezo === '_torles' ? '' : ' → ' + esc(j.ertek ?? '—')} <span>(${esc(j.rogzitette || '')})</span>${j.elfogadott === false ? ' <i>visszavonva</i>' : ` <button type="button" class="btn small" data-sv="${j.javitas_id}">Visszavonás</button>`}`).join(' · ')}</div>` : ''}
+    <div class="sor-lab">${uj ? '<button type="button" class="btn small" data-elvet>Mégse</button>' : '<label class="torles"><input type="checkbox" data-torles> Sor törlése</label>'}</div>
+  </div>`;
+}
+function oszlopok(tabla) {
+  if (tabla === 'tbl_karrier') return KARRIER_OSZL;
+  return (S.kt.oszlopok[tabla] || []).map(o => o.oszlop);
+}
+async function szakaszSzerk(P, id, k) {
+  const def = SZAKASZ_SZERK[k], szul = ev(P.szemely.szuletesiev), r = P.reszletek || {};
+  const J = (P.sorjavitasok || []);
+  const jOf = (t, rid) => J.filter(j => j.tabla === t && Number(j.rekord_id) === Number(rid) && j.mezo !== '_uj');
+  const allit = {}; (P.allitasok || []).filter(a => a.elfogadott !== false).forEach(a => { allit[a.tabla + '.' + a.mezo] = a.ertek; });
+  const box = $('#urlap-' + k);
+  $('#nezet-' + k).classList.add('hidden'); box.parentElement.querySelector('[data-szakasz]').classList.add('hidden');
+  let h = '<p class="muted small">Csak a megváltoztatott mezők mentődnek, új bejegyzésként; az eredeti érték megmarad, és minden javítás visszavonható. Törlésnél a sor nem vész el, csak érvénytelennek jelöljük.</p>';
+  if (def.kv) h += `<h4>Adatok</h4><div class="szerk-racs" data-kv>${def.kv.map(([m, c, tip]) => {
+    const v = ('tbl_elittag_reszletek.' + m) in allit ? allit['tbl_elittag_reszletek.' + m] : r[m];
+    return mezoHtml('tbl_elittag_reszletek.' + m, c, tip || 'text', v, szul); }).join('')}</div>`;
+  if (def.rokon) {
+    h += '<h4>Rokonok</h4><div data-rokonok>' + (P.csalad || []).map(c => `<div class="sor-kartya rokon" data-kapcsolat="${c.kapcsolatid}" data-rokon="${c.rokonid}">
+      <div class="sor-fej"><b>${esc(SZEREP[c.szerep] || (c.szerep || '').toLowerCase().replace('_', ' ') || c.viszony)}</b></div>
+      <div class="szerk-racs" data-szemelymezok>${mezoHtml('vezeteknev', 'Vezetéknév', 'text', c.vezeteknev, szul)}${mezoHtml('keresztnev', 'Keresztnév', 'text', c.keresztnev, szul)}
+        ${mezoHtml('szuletesiev', 'Születési év', 'ev', c.szuletesiev, szul)}${mezoHtml('szuletesihely', 'Születési hely', 'text', c.szuletesihely, szul)}</div>
+      <div class="szerk-racs" data-kapcsolatmezok>${c.viszony === 'gyermek' ? mezoHtml('gyermekmelyikhazassagbol', 'Melyik házasságból', 'text', c.hazassagbol, szul) : ''}
+        ${c.viszony === 'házastárs' ? mezoHtml('kezdeteve', 'Házasság kezdete', 'ev', c.kezdeteve, szul) + mezoHtml('vegeeve', 'Házasság vége', 'ev', c.vegeeve, szul) : ''}</div>
+      <div class="small muted" style="margin-top:6px">Foglalkozásai</div>
+      <div data-fogl-lista>${(c.foglalkozasok || []).map(f => sorKartya('tbl_foglalkozasok', ['idopontkod', 'foglalkozas'], f, szul, { szemely: c.rokonid, javitasok: jOf('tbl_foglalkozasok', f.foglalkozasid) })).join('')}</div>
+      <button type="button" class="btn small" data-uj-fogl="${c.rokonid}">+ Foglalkozás</button>
+      ${jOf('tbl_csaladi_kapcsolatok_kodolt', c.kapcsolatid).length ? `<div class="small muted">Javítások: ${jOf('tbl_csaladi_kapcsolatok_kodolt', c.kapcsolatid).map(j => `${esc(j.mezo === '_torles' ? 'törlés' : cimke(j.mezo))} ${j.elfogadott === false ? '<i>visszavonva</i>' : `<button type="button" class="btn small" data-sv="${j.javitas_id}">Visszavonás</button>`}`).join(' · ')}</div>` : ''}
+      <div class="sor-lab"><label class="torles"><input type="checkbox" data-torles> Rokoni kapcsolat törlése</label></div></div>`).join('') + '</div>'
+      + '<button type="button" class="btn" data-uj-rokon>+ Új rokon</button>';
+  }
+  for (const key of def.listak) {
+    const [tabla, cim] = LISTA[key], oszl = oszlopok(tabla);
+    h += `<h4>${esc(cim)}</h4><div data-lista="${key}">${(P[key] || []).map(row => sorKartya(tabla, oszl, row, szul, { szemely: id, javitasok: jOf(tabla, row[pk(tabla)]) })).join('') || '<p class="muted small">Nincs sor.</p>'}</div>
+      <button type="button" class="btn small" data-uj-sor="${key}">+ Új sor: ${esc(cim.toLowerCase())}</button>`;
+  }
+  box.innerHTML = `<form class="form" id="szf-${k}">${h}${forrasValaszto('sf' + k)}
+    <div class="toolbar"><button class="btn primary" type="submit">Mentés</button><button class="btn" type="button" data-megse>Mégse</button></div><div id="szmsg-${k}"></div></form>`;
+  const f = $('#szf-' + k);
+  $('#sf' + k + '-fs').addEventListener('change', e => $('#sf' + k + '-uj').classList.toggle('hidden', e.target.value !== 'uj'));
+  f.querySelector('[data-megse]').addEventListener('click', () => { box.innerHTML = ''; $('#nezet-' + k).classList.remove('hidden'); box.parentElement.querySelector('[data-szakasz]').classList.remove('hidden'); });
+  f.addEventListener('click', async e => {
+    const t = e.target;
+    if (t.dataset.ujSor !== undefined && t.dataset.ujSor) {
+      const [tabla] = LISTA[t.dataset.ujSor]; const lista = f.querySelector(`[data-lista="${t.dataset.ujSor}"]`);
+      lista.querySelector('p.muted')?.remove(); lista.insertAdjacentHTML('beforeend', sorKartya(tabla, oszlopok(tabla), null, szul, { szemely: id }));
+    } else if (t.dataset.ujFogl) {
+      t.previousElementSibling.insertAdjacentHTML('beforeend', sorKartya('tbl_foglalkozasok', ['idopontkod', 'foglalkozas'], null, szul, { szemely: t.dataset.ujFogl }));
+    } else if (t.dataset.ujRokon !== undefined) {
+      f.querySelector('[data-rokonok]').insertAdjacentHTML('beforeend', `<div class="sor-kartya uj rokon-uj"><div class="sor-fej"><b>Új rokon</b></div><div class="szerk-racs">
+        ${mezoHtml('viszony', 'Viszony', 'viszony', '', szul)}${mezoHtml('vezeteknev', 'Vezetéknév', 'text', '', szul)}${mezoHtml('keresztnev', 'Keresztnév', 'text', '', szul)}
+        ${mezoHtml('szuletesiev', 'Születési év', 'ev', '', szul)}${mezoHtml('szuletesihely', 'Születési hely', 'text', '', szul)}${mezoHtml('hazassagbol', 'Melyik házasságból (gyermeknél)', 'text', '', szul)}
+        ${mezoHtml('foglalkozas', 'Foglalkozás (alapfoglalkozás)', 'text', '', szul)}</div><div class="sor-lab"><button type="button" class="btn small" data-elvet>Mégse</button></div></div>`);
+    } else if (t.dataset.elvet !== undefined) {
+      t.closest('.sor-kartya').remove();
+    } else if (t.dataset.sv) {
+      if (!confirm('Visszavonod ezt a javítást?')) return;
+      try { await q(sb.rpc('sorjavitas_visszavon', { p_javitas_id: Number(t.dataset.sv) })); szemelyLap(id).then(() => $('#sz-' + k)?.scrollIntoView()); } catch (err) { alert('Hiba: ' + (err.message || err)); }
+    }
+  });
+  f.addEventListener('change', e => { const c = e.target.closest('.sor-kartya'); if (c && e.target.dataset.torles !== undefined) c.classList.toggle('torolve', e.target.checked); });
+  const ertekek = (root, csakValtozott) => {
+    const o = {};
+    root.querySelectorAll(':scope > .szerk-racs > label[data-m], :scope > details > .szerk-racs > label[data-m]').forEach(l => {
+      const v = l.querySelector('input,select').value.trim();
+      if (csakValtozott && v === l.dataset.eredeti) return;
+      if (l.dataset.tip === 'ev' && v && !/^\d{4}$/.test(v)) throw new Error(`${l.firstChild.textContent}: négyjegyű évszámot adj meg.`);
+      o[l.dataset.m] = v;
+    });
+    return o;
+  };
+  f.addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = f.querySelector('button[type=submit]'), uz = $('#szmsg-' + k);
+    const muveletek = [];
+    try {
+      // személyszintű mezők
+      const kvb = f.querySelector('[data-kv]');
+      if (kvb) { const o = {}; kvb.querySelectorAll('label[data-m]').forEach(l => { const v = l.querySelector('input,select').value.trim(); if (v !== l.dataset.eredeti) { if (l.dataset.tip === 'ev' && v && !/^\d{4}$/.test(v)) throw new Error(`${l.firstChild.textContent}: négyjegyű évszámot adj meg.`); o[l.dataset.m] = v; } });
+        if (Object.keys(o).length) muveletek.push(['javit_mezok', { p_szemelyid: id, p_valtozasok: o }]); }
+      // rokonok
+      f.querySelectorAll('.sor-kartya.rokon').forEach(c => {
+        if (c.querySelector(':scope > .sor-lab [data-torles]')?.checked) { muveletek.push(['javit_sor', { p_tabla: 'tbl_csaladi_kapcsolatok_kodolt', p_rekord_id: Number(c.dataset.kapcsolat), p_valtozasok: { _torles: '1' } }]); return; }
+        const sz = {}; c.querySelectorAll('[data-szemelymezok] label[data-m]').forEach(l => { const v = l.querySelector('input,select').value.trim(); if (v !== l.dataset.eredeti) { if (l.dataset.tip === 'ev' && v && !/^\d{4}$/.test(v)) throw new Error('Születési év: négyjegyű évszámot adj meg.'); sz['tbl_szemelyek.' + l.dataset.m] = v; } });
+        if (Object.keys(sz).length) muveletek.push(['javit_mezok', { p_szemelyid: Number(c.dataset.rokon), p_valtozasok: sz }]);
+        const ka = {}; c.querySelectorAll('[data-kapcsolatmezok] label[data-m]').forEach(l => { const v = l.querySelector('input,select').value.trim(); if (v !== l.dataset.eredeti) ka[l.dataset.m] = v; });
+        if (Object.keys(ka).length) muveletek.push(['javit_sor', { p_tabla: 'tbl_csaladi_kapcsolatok_kodolt', p_rekord_id: Number(c.dataset.kapcsolat), p_valtozasok: ka }]);
+      });
+      f.querySelectorAll('.sor-kartya.rokon-uj').forEach(c => {
+        const o = ertekek(c, false);
+        if (!o.viszony) throw new Error('Új rokon: válaszd ki a rokoni viszonyt.');
+        muveletek.push(['rokon_uj', { p_szemelyid: id, p_viszony: o.viszony, p_vezeteknev: o.vezeteknev || null, p_keresztnev: o.keresztnev || null,
+          p_szuletesiev: o.szuletesiev ? Number(o.szuletesiev) : null, p_szuletesihely: o.szuletesihely || null, p_hazassagbol: o.hazassagbol ? Number(o.hazassagbol) : null }, o.foglalkozas]);
+      });
+      // listasorok (a rokonok foglalkozásai is)
+      f.querySelectorAll('.sor-kartya[data-tabla]').forEach(c => {
+        const tabla = c.dataset.tabla;
+        if (c.classList.contains('uj')) {
+          const o = ertekek(c, false); Object.keys(o).forEach(m => { if (!o[m]) delete o[m]; });
+          if (tabla === 'tbl_foglalkozasok' && o.foglalkozas && !o.idopontkod) o.idopontkod = 'alap';
+          if (Object.keys(o).length) muveletek.push(['sor_uj', { p_tabla: tabla, p_szemelyid: Number(c.dataset.szemely), p_ertekek: o }]);
+          return;
+        }
+        if (c.querySelector(':scope > .sor-lab [data-torles]')?.checked) { muveletek.push(['javit_sor', { p_tabla: tabla, p_rekord_id: Number(c.dataset.id), p_valtozasok: { _torles: '1' } }]); return; }
+        const o = ertekek(c, true);
+        if (Object.keys(o).length) muveletek.push(['javit_sor', { p_tabla: tabla, p_rekord_id: Number(c.dataset.id), p_valtozasok: o }]);
+      });
+      if (!muveletek.length) { msg(uz, 'Nem változott semmi.', 'info'); return; }
+      btn.disabled = true;
+      const fid = await forrasAzonosito('sf' + k), hiv = $('#sf' + k + '-hiv').value || null, megj = $('#sf' + k + '-megj').value || null;
+      let n = 0;
+      for (const [fn, args, fogl] of muveletek) {
+        const a = { ...args, p_forras_id: fid };
+        a.p_hivatkozas = hiv; a.p_megjegyzes = megj;
+        const { data } = await q(sb.rpc(fn, a));
+        if (fn === 'rokon_uj' && fogl) await q(sb.rpc('sor_uj', { p_tabla: 'tbl_foglalkozasok', p_szemelyid: data, p_ertekek: { idopontkod: 'alap', foglalkozas: fogl }, p_forras_id: fid, p_hivatkozas: hiv, p_megjegyzes: megj }));
+        n++;
+      }
+      msg(uz, `${n} módosítás rögzítve.`, 'ok');
+      setTimeout(() => szemelyLap(id).then(() => $('#sz-' + k)?.scrollIntoView()), 700);
+    } catch (err) { btn.disabled = false; hibaKiir(uz, err); }
+  });
+}
+
 async function szemelyLap(id) {
   location.hash = 'szemely=' + id;
   app.innerHTML = '<div class="empty">Betöltés…</div>';
@@ -702,6 +973,7 @@ async function szemelyLap(id) {
       q(sb.from('tbl_csoport_tagok').select('csoport_id,elfogadott').eq('szemelyid', id)),
     ]);
     const tagja = new Set((tagsag || []).filter(t => t.elfogadott !== false).map(t => t.csoport_id));
+    sorJavitasokAlkalmaz(P);
     const R = profilRender(P, id);
     const sz = P.szemely;
     app.innerHTML = `<p><a href="#" id="vissza">‹ Vissza a listához</a></p>
@@ -715,10 +987,12 @@ async function szemelyLap(id) {
       <div class="legend"><span>${forrasBadge('KIG-féle kutatás', 'KIG-féle kutatás')} KIG-féle kutatás</span><span>${forrasBadge('x', 'ElitData2026')} ElitData2026</span><span><span class="kod">kód N</span> a jelentése a KIG-kódkönyvből pótlandó</span></div>
       ${csoportSav(id)}
       ${R.nyit.length ? `<div class="msg info">${R.nyit.length} nyitott kérdés: ${R.nyit.map(n => esc(n.tipus)).join(', ')}.</div>` : ''}
-      ${R.tartalom.map(([k, cim, html, n]) => `<div id="sz-${k}">${`<section class="card szakasz"><h3>${esc(cim)}${n ? ` <span class="muted small">(${n})</span>` : ''}</h3>${html}</section>`}</div>`).join('')}`;
+      ${R.tartalom.map(([k, cim, html, n]) => `<div id="sz-${k}"><section class="card szakasz"><h3>${esc(cim)}${n ? ` <span class="muted small">(${n})</span>` : ''}</h3>${
+        S.szerkEz && SZAKASZ_SZERK[k] ? `<div class="szerk-gomb"><button class="btn" data-szakasz="${k}">Szerkesztés</button></div><div id="nezet-${k}">${html}</div><div id="urlap-${k}"></div>` : html}</section></div>`).join('')}`;
     $('#vissza').addEventListener('click', e => { e.preventDefault(); if (S.csoportNav && S.csoportNav.ids.includes(id)) { valt('csoportok', false); csoportLap(S.csoportNav.cs, S.csoportNav.nezet); } else szemelyekLap(); });
     csoportSavKezel(id);
     $('#alap-szerk')?.addEventListener('click', () => alapSzerkeszt(P, id));
+    app.querySelectorAll('[data-szakasz]').forEach(b => b.addEventListener('click', () => szakaszSzerk(P, id, b.dataset.szakasz)));
     app.querySelectorAll('[data-visszavon]').forEach(b => b.addEventListener('click', async () => {
       if (!confirm('Biztosan visszavonod ezt a javítást? Az eredeti érték lesz ismét érvényes.')) return;
       try { await q(sb.rpc('javitas_visszavon', { p_allitas_id: Number(b.dataset.visszavon) })); szemelyLap(id); } catch (err) { alert('Hiba: ' + (err.message || err)); }
