@@ -1344,29 +1344,17 @@ async function munkatarsakLap() {
   if (!S.donto) { app.innerHTML = '<div class="empty">Ehhez nincs jogosultságod.</div>'; return; }
   app.innerHTML = '<div class="empty">Betöltés…</div>';
   try {
-    const [{ data: mt }, { data: cs }, { data: mc }] = await Promise.all([
-      q(sb.from('tbl_munkatarsak').select('*').order('email')),
-      q(sb.from('tbl_csoportok').select('*').order('nev')),
-      q(sb.from('tbl_munkatars_csoportok').select('*')),
-    ]);
-    const tagszam = {};
-    await Promise.all(cs.map(async c => { const { count } = await q(sb.from('tbl_csoport_tagok').select('szemelyid', { count: 'exact', head: true }).eq('csoport_id', c.csoport_id).not('elfogadott', 'is', false)); tagszam[c.csoport_id] = count; }));
-    const van = (e, c) => mc.some(x => x.email === e && x.csoport_id === c);
-    app.innerHTML = `<h2>Munkatársak és jogosultságok</h2>
-      <p class="muted">Alapesetben mindenki egyforma: mindent javíthat és dönthet. A jobb oldali oszlopok egy <b>választható korlátozást</b> jelentenek: akinél bejelölsz egy csoportot, az csak annak tagjait javíthatja és szabálydöntést nem hozhat. Az ellenőrzési munkához nem kell beállítani (azt a Csoportok fülön bárki végezheti).</p>
-      <div class="tbl-wrap"><table><thead><tr><th>E-mail</th><th>Név</th><th>Aktív</th>${cs.map(c => `<th>Korlátozás: csak ${esc(c.nev)} <span class="muted small">(${tagszam[c.csoport_id] ?? '?'} fő)</span></th>`).join('')}</tr></thead><tbody>${
-        mt.map(m => `<tr><td>${esc(m.email)}</td><td>${dash(m.nev)}</td><td><input type="checkbox" data-aktiv="${esc(m.email)}" ${m.aktiv ? 'checked' : ''} ${m.email === S.user.email.toLowerCase() ? 'disabled' : ''}></td>${
-          cs.map(c => `<td><input type="checkbox" data-mc="${esc(m.email)}|${c.csoport_id}" ${van(m.email, c.csoport_id) ? 'checked' : ''} ${m.email === S.user.email.toLowerCase() ? 'disabled' : ''}></td>`).join('')}</tr>`).join('')
+    const { data: mt } = await q(sb.from('tbl_munkatarsak').select('*').order('email'));
+    app.innerHTML = `<h2>Munkatársak</h2>
+      <p class="muted">Minden munkatárs egyforma jogosultsággal dolgozik: mindent láthat, javíthat és dönthet. Itt lehet új munkatársat felvenni, illetve egy munkatárs hozzáférését kikapcsolni (Aktív).</p>
+      <div class="tbl-wrap"><table><thead><tr><th>E-mail</th><th>Név</th><th>Aktív</th></tr></thead><tbody>${
+        mt.map(m => `<tr><td>${esc(m.email)}</td><td>${dash(m.nev)}</td><td><input type="checkbox" data-aktiv="${esc(m.email)}" ${m.aktiv ? 'checked' : ''} ${m.email === S.user.email.toLowerCase() ? 'disabled' : ''}></td></tr>`).join('')
       }</tbody></table></div>
       <form class="form card" id="mt-f"><h3 style="margin-top:0">Új munkatárs</h3>
         <label>E-mail-cím<input type="email" id="mt-e" required></label><label>Név<input id="mt-n"></label>
         <button class="btn primary" type="submit">Felvétel</button><div id="mt-msg"></div>
         <p class="muted small">A belépéshez a Supabase-ben is létre kell hozni a felhasználót (Authentication → Users → Add user), ugyanezzel az e-mail-címmel.</p></form>
-      <p class="muted small">A csoportok tagságát a személy adatlapján, a név alatti jelölőnégyzetekkel lehet módosítani.</p>`;
-    app.querySelectorAll('[data-mc]').forEach(cb => cb.addEventListener('change', async () => {
-      const [e, c] = cb.dataset.mc.split('|');
-      try { await q(sb.rpc('munkatars_csoport', { p_email: e, p_csoport_id: Number(c), p_be: cb.checked })); } catch (err) { cb.checked = !cb.checked; alert('Hiba: ' + (err.message || err)); }
-    }));
+`;
     app.querySelectorAll('[data-aktiv]').forEach(cb => cb.addEventListener('change', async () => {
       try { await q(sb.rpc('munkatars_beallit', { p_email: cb.dataset.aktiv, p_nev: null, p_aktiv: cb.checked })); } catch (err) { cb.checked = !cb.checked; alert('Hiba: ' + (err.message || err)); }
     }));
