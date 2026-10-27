@@ -629,12 +629,13 @@ function profilRender(P, id) {
     { c: 'Tanítási nyelv', f: s => kod(s.tanitasinyelv) },
     { c: 'Végzettség', f: s => kod(s['vegzettségkod']) },
   ]);
-  const karrier = P.karrier && P.karrier.length ? `<div class="tbl-wrap"><table id="kar-tbl"><thead><tr><th>Időszak</th><th>Foglalkozás</th><th>Munkahely</th><th>Helyszín</th><th>Forrás</th><th>Harmonizált</th><th>Hivatás1</th><th>Hivatás2</th><th>Specifikáció</th><th>Állapot</th>${S.szerkEz ? '<th></th>' : ''}</tr></thead><tbody>${
+  const karrier = P.karrier && P.karrier.length ? `<div class="tbl-wrap"><table id="kar-tbl"><thead><tr><th>Időszak</th><th>Foglalkozás</th><th>Munkahely</th><th>Helyszín</th><th>Forrás</th><th>Harmonizált</th><th>Hivatás1</th><th>Hivatás2</th><th>Specifikáció</th><th>Harm. forrás</th><th>Állapot</th>${S.szerkEz ? '<th></th>' : ''}</tr></thead><tbody>${
     P.karrier.map(k => { const jm = k.javitott_mezok || [], jv = m => jm.includes(m) ? ` <span class="badge b-info" title="Javított érték; eredetileg: ${esc(k.eredeti?.[m] ?? '—')}">javítva</span>` : '';
       const evJav = jm.includes('elsoev') || jm.includes('utolsoev');
       return `<tr ${k.harm_id ? `class="click" data-h="${k.harm_id}"` : ''}><td>${idoszak(k.elsoev, k.utolsoev)}${evJav ? jv(jm.includes('elsoev') ? 'elsoev' : 'utolsoev') : (k.leiras && k.leiras.startsWith('? kód') ? ` <span class="badge b-warn">${esc(k.leiras)}</span>` : '')}</td>
       <td>${dash(k.foglalkozas)}${jv('foglalkozas')}</td><td class="small">${dash(k.munkahely)}${jv('munkahely')}</td><td class="small">${dash(k.helyszin)}${jv('helyszin')}</td><td>${forrasBadge(k.forras, k.fazis)}</td>
       <td>${dash(k.harmonizalt)}</td><td>${dash(k.hivatas1)}</td><td>${dash(k.hivatas2)}</td><td class="small">${dash(k.specifikacio)}</td>
+      <td>${k.harm_id ? forrasBadge(k.harm_forras || 'ElitData2026', 'ElitData2026') : ''}</td>
       <td>${k.harm_id ? allapotBadge(k.harm_allapot) : '<span class="muted small">nincs besorolva</span>'}</td>${S.szerkEz ? `<td><button class="btn small" data-kj="${k.karrierid}">Javítás</button></td>` : ''}</tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nincs karrieradat.</p>';
   const karrierpoz = tabla(P.karrierpoziciok, [{ c: 'Belépés éve', f: s => evF(s.belepesev) }, { c: 'Pozíciókód évenként', f: s => pozkod(s), cls: 'small' }]);
   const csalad = tabla(P.csalad, [
