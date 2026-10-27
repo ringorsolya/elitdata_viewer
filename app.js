@@ -528,7 +528,7 @@ async function szemelyekLap() {
 // A kódtáblák egyszer töltődnek be; ahol nincs megbízható kódtábla, a kód „kód N” formában látszik (lásd KODKONYV_HIANY).
 async function kodtablak() {
   if (S.kt) return S.kt;
-  const [vm, kit, kk, part, szerz, zst, fr, egy, idp, osz, dipl, hmod, nemz] = await Promise.all([
+  const [vm, kit, kk, part, szerz, zst, fr, egy, idp, osz, dipl, hmod, nemz, csall] = await Promise.all([
     q(sb.from('kod_varmegyek').select('kodertek,kodnev')),
     q(sb.from('tbl_kod_kituntetes').select('lista,kituntetekod,kituntetenev')),
     q(sb.from('tbl_kod_kulfoldikit').select('orszag,kodertek,kituntetenev')),
@@ -542,6 +542,7 @@ async function kodtablak() {
     q(sb.from('kod_diplomafajta').select('kodertek,nev,statusz').order('kodertek')),
     q(sb.from('kod_halalmodja').select('kodertek,nev').order('kodertek')),
     q(sb.from('kod_nemzetiseg').select('lista,kod,nev').order('kod')),
+    q(sb.from('kod_csaladiallapot').select('kodertek,nev,statusz').order('kodertek')),
   ]);
   const m = (rows, k, v) => new Map(rows.map(r => [Number(r[k]), r[v]]));
   S.kt = {
@@ -549,6 +550,7 @@ async function kodtablak() {
     kitHazai: m(kit.data.filter(r => r.lista === 1), 'kituntetekod', 'kituntetenev'),
     diploma: new Map(dipl.data.map(r => [Number(r.kodertek), r])),
     halalmod: m(hmod.data, 'kodertek', 'nev'),
+    csaladiallapot: new Map(csall.data.map(r => [Number(r.kodertek), r])),
     nemzetiseg: m(nemz.data.filter(r => r.lista === 1), 'kod', 'nev'),
     kitKulf: kk.data,
     kitLista: [2, 3, 4, 5].reduce((o, l) => (o[l] = m(kit.data.filter(r => r.lista === l), 'kituntetekod', 'kituntetenev'), o), {}),
@@ -579,6 +581,7 @@ function profilRender(P, id) {
   const evF = v => (v === null || v === undefined || v === '') ? null : esc(ev(v, szul));
   const boolF = v => (v === null || v === undefined || v === '') ? null : (Number(v) === 1 ? 'igen' : Number(v) === 0 ? 'nem' : kod(v));
   const txt = v => (v === null || v === undefined || v === '') ? null : esc(v);
+  const csallF = v => { if (v === null || v === undefined || v === '') return null; const c = kt.csaladiallapot.get(Number(v)); return c ? `${esc(c.nev)}${c.statusz === 'következtetett' ? ' <span class="muted small" title="A kódkönyv hiányában az adatokból következtetett jelentés">(?)</span>' : ''}` : kod(v); };
   const fb = fid => { const f = kt.forras.get(fid); return f ? forrasBadge(f.megnevezes, f.fazis) : ''; };
   // az állítások (javítások) felülírják a megjelenített értéket, a régi érték megmarad tooltipben
   const allit = {};
@@ -628,9 +631,9 @@ function profilRender(P, id) {
     mezo('tbl_elittag_reszletek', r, 'elsohazassagev', 'Első házasság éve', evF),
     mezo('tbl_elittag_reszletek', r, 'hazaskor', 'Életkor a házasságkötéskor', txt),
     mezo('tbl_elittag_reszletek', r, 'gyerekekszama', 'Gyerekek száma', txt),
-    mezo('tbl_elittag_reszletek', r, 'csaladiallapot1928', 'Családi állapot 1928', kod),
-    mezo('tbl_elittag_reszletek', r, 'csaladiallapot1938', 'Családi állapot 1938', kod),
-    mezo('tbl_elittag_reszletek', r, 'csaladiallapot1942', 'Családi állapot 1942', kod),
+    mezo('tbl_elittag_reszletek', r, 'csaladiallapot1928', 'Családi állapot 1928', csallF),
+    mezo('tbl_elittag_reszletek', r, 'csaladiallapot1938', 'Családi állapot 1938', csallF),
+    mezo('tbl_elittag_reszletek', r, 'csaladiallapot1942', 'Családi állapot 1942', csallF),
     mezo('tbl_elittag_reszletek', r, 'apahalalev', 'Apa halála (kategória)', kod),
     mezo('tbl_elittag_reszletek', r, 'anyahalalev', 'Anya halála (kategória)', kod),
   ]);
@@ -768,8 +771,8 @@ const JAVITHATO = [
   ['tbl_elittag_reszletek', 'testverekszama', 'Testvérek száma', 'text'], ['tbl_elittag_reszletek', 'hazassagokszama', 'Házasságok száma', 'text'],
   ['tbl_elittag_reszletek', 'elsohazassagev', 'Első házasság éve', 'ev'], ['tbl_elittag_reszletek', 'hazaskor', 'Életkor a házasságkötéskor', 'text'],
   ['tbl_elittag_reszletek', 'gyerekekszama', 'Gyerekek száma', 'text'],
-  ['tbl_elittag_reszletek', 'csaladiallapot1928', 'Családi állapot 1928 (kód)', 'kod'], ['tbl_elittag_reszletek', 'csaladiallapot1938', 'Családi állapot 1938 (kód)', 'kod'],
-  ['tbl_elittag_reszletek', 'csaladiallapot1942', 'Családi állapot 1942 (kód)', 'kod'],
+  ['tbl_elittag_reszletek', 'csaladiallapot1928', 'Családi állapot 1928', 'csall'], ['tbl_elittag_reszletek', 'csaladiallapot1938', 'Családi állapot 1938', 'csall'],
+  ['tbl_elittag_reszletek', 'csaladiallapot1942', 'Családi állapot 1942', 'csall'],
 ];
 function aktualis(P, tabla, mezo) {
   const a = (P.allitasok || []).filter(x => x.elfogadott !== false && x.tabla === tabla && x.mezo === mezo).pop();
@@ -824,7 +827,7 @@ function alapSzerkeszt(P, id) {
     if (tip === 'hely') inp = `<select id="${idd}"><option value="">—</option>${helyOpt}${v && !kt.hely.has(Number(v)) ? `<option value="${esc(v)}">kód ${esc(v)}</option>` : ''}</select>`;
     else if (tip === 'bool') inp = `<select id="${idd}"><option value="">—</option><option value="1">igen</option><option value="0">nem</option></select>`;
     else if (tip === 'szerzetes') inp = `<select id="${idd}"><option value="">—</option>${szerzOpt}</select>`;
-    else if (tip === 'nemz' || tip === 'halalmod') { const mp = tip === 'nemz' ? kt.nemzetiseg : kt.halalmod; inp = `<select id="${idd}"><option value="">—</option>${[...mp.entries()].map(([k, n]) => `<option value="${k}">${k} – ${esc(n)}</option>`).join('')}${v !== '' && !mp.has(Number(v)) ? `<option value="${esc(v)}">kód ${esc(v)}</option>` : ''}</select>`; }
+    else if (tip === 'nemz' || tip === 'halalmod' || tip === 'csall') { const mp = tip === 'nemz' ? kt.nemzetiseg : tip === 'halalmod' ? kt.halalmod : new Map([...kt.csaladiallapot].map(([k, c]) => [k, c.nev])); inp = `<select id="${idd}"><option value="">—</option>${[...mp.entries()].map(([k, n]) => `<option value="${k}">${k} – ${esc(n)}</option>`).join('')}${v !== '' && !mp.has(Number(v)) ? `<option value="${esc(v)}">kód ${esc(v)}</option>` : ''}</select>`; }
     else inp = `<input id="${idd}" ${tip === 'ev' ? 'inputmode="numeric" placeholder="éééé"' : ''}>`;
     return `<label data-k="${t}.${m}" data-tip="${tip}" data-eredeti="${esc(v)}">${esc(cim)}${inp}</label>`;
   };
