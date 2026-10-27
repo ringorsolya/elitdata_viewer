@@ -23,6 +23,11 @@ function esc(v) {
 const dash = v => (v === null || v === undefined || v === '' ? '<span class="muted">—</span>' : esc(v));
 // harmonizált mező megjelenítése: érték · NINCS (kifejezetten nincs) · döntésre váró beírt érték (sárga) · — (nincs adat)
 const HARM_CIMKE = { harmonizalt: 'harmonizált: ', hivatas1: 'Hivatás1: ', hivatas2: 'Hivatás2: ' };
+const EGYEBPOL = { els_19in: '1919: érintett', els_19mi: '1919: milyen szerep', els_19_x: '1919: jelölés', kormr_in: 'Kormányzati megbízatás', kormr_mi: 'Kormányzati megbízatás: milyen',
+  kormr_ev: 'Kormányzati megbízatás: év', kormr_ho: 'Kormányzati megbízatás: hónap', lager1: 'Láger', lager2: 'Láger (2.)', nyil_in: 'Nyilas üldözés: érintett', nyil_mi: 'Nyilas üldözés: mi történt',
+  igb_45in: '1945 utáni igazolás: érintett', igb_45ev: 'Igazolás éve', igb_45ho: 'Igazolás hónapja', igb_45mi: 'Igazolás eredménye', igb_45it: 'Igazolás: ítélet', igb_45fr: 'Igazolás: év',
+  baj48_it: '1948 utáni eljárás: ítélet', baj48_fr: '1948 utáni eljárás: év', ose56_it: '1956 utáni eljárás: ítélet', ose56_fr: '1956 utáni eljárás: év',
+  ...Object.fromEntries([1, 2, 3, 4, 5, 6].flatMap(i => [[`ah${i}_tol`, `Állami hivatal ${i}: tól`], [`ah${i}_ig`, `Állami hivatal ${i}: ig`]])) };
 function harmF(k, m) {
   const v = k[m];
   if (v !== null && v !== undefined && v !== '') return String(v).toUpperCase() === 'NINCS' ? 'NINCS' : esc(v);
@@ -704,7 +709,9 @@ function profilRender(P, id) {
     P.szervezet_belfold?.length ? '<h4>Belföldi szervezetek</h4>' + tabla(P.szervezet_belfold, [{ c: 'Szervezet', k: 'szervezetnev' }, { c: 'Belépés', f: s => evF(s.belepesev) }, { c: 'Pozíciókód évenként', f: s => pozkod(s), cls: 'small' }]) : '',
     P.szervezet_kulfold?.length ? '<h4>Külföldi szervezetek</h4>' + tabla(P.szervezet_kulfold, [{ c: 'Szervezet', k: 'szervezetnev' }, { c: 'Ország', f: s => helyF(s.orszagkod) }, { c: 'Pozíciókód évenként', f: s => pozkod(s), cls: 'small' }]) : '',
   ].join('');
-  const egyebPol = (P.egyeb_politikai || []).map(s => kvBlokk(Object.entries(s).filter(([k, v]) => v !== null && v !== '' && !['azonosító', 'szemelyid', 'forras_id', 'rogzitve', 'elfogadott'].includes(k)).map(([k, v]) => kvSor(k, isNaN(Number(v)) ? esc(v) : kod(v), s.forras_id)))).join('');
+  // a belső mezők (_jav, _eredeti: a javítási réteg adatai) nem jelennek meg; a javított mező mellett * jelzi a javítást
+  const egyebPol = (P.egyeb_politikai || []).map(s => kvBlokk(Object.entries(s).filter(([k, v]) => v !== null && v !== '' && !k.startsWith('_') && !['azonosító', 'szemelyid', 'forras_id', 'rogzitve', 'elfogadott'].includes(k))
+    .map(([k, v]) => kvSor(EGYEBPOL[k] || cimke(k), (/(ev|fr|_tol|_ig|ho)$/.test(k) ? (Number(v) === 0 ? '<span class="muted">nincs adat</span>' : esc(ev(v, szul))) : isNaN(Number(v)) ? esc(v) : kod(v)) + ((s._jav || []).includes(k) ? ` <span class="muted small" title="Javított érték; eredetileg: ${esc(s._eredeti?.[k] ?? '—')}">*</span>` : ''), s.forras_id)))).join('');
   const politika = [
     P.parttagsag?.length ? '<h4>Párttagság</h4>' + tabla(P.parttagsag, [{ c: 'Párt', f: s => kt.part.get(Number(s.partkod)) ? esc(kt.part.get(Number(s.partkod))) : kod(s.partkod) }]) : '',
     P.part_megfigyeles?.length ? '<h4>Párthovatartozás megfigyelési évenként</h4>' + tabla(P.part_megfigyeles, [{ c: 'Év', k: 'ev' }, { c: 'Párt', f: s => kt.part.get(Number(s.partkod)) ? esc(kt.part.get(Number(s.partkod))) : kod(s.partkod) }]) : '',
@@ -717,7 +724,7 @@ function profilRender(P, id) {
   ].join('');
   const vagyon = [
     P.vagyon?.length ? tabla(P.vagyon, [{ c: 'Év', k: 'ev' }, { c: 'Fizetés', k: 'fizetes' }, { c: 'Öröklés', k: 'orokles' }, { c: 'Háztartás', k: 'haztartas' }, { c: 'Igazgatósági tagság', k: 'igazgatosagitag' }, { c: 'Forgalmi adó (kórház)', k: 'forgotokkorhaz' }]) : '',
-    P.lakas?.length ? '<h4>Lakás (1942)</h4>' + (P.lakas || []).map(s => kvBlokk(Object.entries(s).filter(([k, v]) => v !== null && v !== 0 && !['lakasid', 'szemelyid', 'forras_id', 'rogzitve', 'elfogadott', 'ev'].includes(k)).map(([k, v]) => kvSor(LAKAS[k] || k, esc(v), null)))).join('') : '',
+    P.lakas?.length ? '<h4>Lakás (1942)</h4>' + (P.lakas || []).map(s => kvBlokk(Object.entries(s).filter(([k, v]) => v !== null && v !== 0 && !k.startsWith('_') && !['lakasid', 'szemelyid', 'forras_id', 'rogzitve', 'elfogadott', 'ev'].includes(k)).map(([k, v]) => kvSor(LAKAS[k] || k, esc(v), null)))).join('') : '',
     P.haztartas?.length ? '<h4>Háztartás (1942)</h4>' + tabla(P.haztartas, [{ c: 'Jelenlévők', k: 'jelenlevokszama' }, { c: 'Távollévők', k: 'tavollevokszama' }, { c: 'Háztartási alkalmazott', k: 'haztartasialkalmazottak' }, { c: 'Gyerekek', k: 'gyerekek' }, { c: 'Más rokon', k: 'masrokon' }]) : '',
   ].join('');
   const nyit = P.nyitott || [];
