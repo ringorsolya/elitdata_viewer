@@ -195,7 +195,7 @@ async function nyitottLap() {
       box.querySelector('tbody').addEventListener('click', e => {
         const tr = e.target.closest('tr'); if (!tr) return;
         box.querySelectorAll('tr').forEach(x => x.classList.remove('sel')); tr.classList.add('sel');
-        tetel(data[Number(tr.dataset.i)], () => nyitottLap());
+        tetel(data[Number(tr.dataset.i)], () => lista());
       });
       $('#ny-pager').innerHTML = ''; $('#ny-pager').appendChild(pager(count, st.page, p => { st.page = p; lista(); }));
     } catch (e) { hibaKiir(box, e); }
@@ -222,12 +222,27 @@ function szemLinkek(root) {
   root.querySelectorAll('[data-szem]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); valt('szemelyek', false); szemelyLap(Number(a.dataset.szem)); }));
 }
 
+async function hatasSzamol(ids) {
+  const h = { rendben: 0, var: 0, egyeb: 0, masik: [] };
+  if (!ids.length) return h;
+  const { data } = await q(sb.from('v_karrier_harmonizalt').select('allapot,nyitott_ertekek').in('harm_id', ids.slice(0, 300)));
+  const m = new Map();
+  for (const r of data) {
+    if (r.allapot === 'rendben') h.rendben++; else if (r.allapot === 'döntésre vár') h.var++; else h.egyeb++;
+    for (const n of (r.nyitott_ertekek || '').split('; ').filter(Boolean)) m.set(n, (m.get(n) || 0) + 1);
+  }
+  h.masik = [...m.entries()].sort((a, b) => b[1] - a[1]).map(([n, k]) => `${n} (${k})`);
+  return h;
+}
+function hatasHtml(h) {
+  return `${h.rendben} rendben · ${h.var} döntésre vár${h.egyeb ? ` · ${h.egyeb} egyéb` : ''}${h.masik.length ? `<br><span class="muted small">nyitott értékek ezekben a sorokban: ${esc(h.masik.slice(0, 4).join('; '))}</span>` : ''}`;
+}
 function celSzoveg(s) {
   if (!s.cel_oszlop) return '';
   return esc(MEZONEV[s.cel_oszlop]) + ': ' + esc(s.cel_ertek || '') + (s.cel2_oszlop ? ' <b>+</b> ' + esc(MEZONEV[s.cel2_oszlop]) + ': ' + esc(s.cel2_ertek || '') : '');
 }
 // szabály részletei + döntés
-async function szabalyReszlet(id, d, utana) {
+async function szabalyReszlet(id, d, utana, uzenet) {
   const { data: s } = await q(sb.from('tbl_ertek_szabalyok').select('*').eq('szabaly_id', id).single());
   const col = s.oszlop + '_beirt';
   const { data: sorok, count } = await q(sb.from('tbl_karrier_harmonizalas')
@@ -242,6 +257,8 @@ async function szabalyReszlet(id, d, utana) {
     const x = szem.get(key); x.sorok++; if (r.fajl_foglalkozas) x.fogl.add(r.fajl_foglalkozas);
   }
   const lista = s.oszlop;
+  // hatás: az érintett sorok jelenlegi harmonizációs állapota
+  const hatas = await hatasSzamol(sorok.map(r => r.harm_id));
   let kanon = null;
   if (s.allapot === 'összevonva') {
     const { data: ks } = await q(sb.from('tbl_ertek_szabalyok').select('szabaly_id,beirt_ertek,allapot,cel_oszlop,cel_ertek,cel2_oszlop,cel2_ertek')
@@ -249,6 +266,7 @@ async function szabalyReszlet(id, d, utana) {
     kanon = (ks || [])[0] || null;
   }
   d.innerHTML = `<div class="card">
+    ${uzenet ? `<div class="msg ok small" style="margin-bottom:10px">${uzenet}</div>` : ''}
     ${kanon ? `<div class="msg info small" style="margin-bottom:10px">Ez a szabály össze van vonva a(z) <b>„${esc(kanon.beirt_ertek)}”</b> szabállyal (csak kis/nagybetűben tér el), annak döntése érvényes rá is: ${allapotBadge(kanon.allapot)} ${celSzoveg(kanon) || ''}. Ha itt döntesz, a döntés a(z) „${esc(kanon.beirt_ertek)}” szabályra kerül, és mindkét alakra érvényes lesz.</div>` : ''}
     <h3 style="margin-top:0">${esc(MEZONEV[s.oszlop])}: „${esc(s.beirt_ertek)}”</h3>
     <div class="kv small">
@@ -256,6 +274,7 @@ async function szabalyReszlet(id, d, utana) {
       <div>Típus</div><div>${dash(s.tipus)}</div>
       <div>Javaslat</div><div>${celSzoveg(s) || '<span class="muted">nincs</span>'}</div>
       <div>Érintett</div><div>${count} sor, ${szem.size} személy</div>
+      <div>Jelenleg</div><div>${hatasHtml(hatas)}</div>
       ${s.dontotte ? `<div>Döntött</div><div>${esc(s.dontotte)}, ${new Date(s.dontes_ideje).toLocaleString('hu-HU')}</div>` : ''}
       ${s.megjegyzes ? `<div>Megjegyzés</div><div>${esc(s.megjegyzes)}</div>` : ''}
     </div>
@@ -340,8 +359,10 @@ async function szabalyReszlet(id, d, utana) {
       } else {
         await q(sb.rpc('dont_szabaly', { p_szabaly_id: id, p_allapot: 'elutasítva', p_cel_oszlop: null, p_cel_ertek: null, p_megjegyzes: megj || null }));
       }
-      msg($('#szmsg', d), 'Rögzítve. Az érintett sorok frissültek; az esetleges ütközések az „ütközés” csoportban jelennek meg.', 'ok');
-      setTimeout(utana, 1200);
+      const uj = await hatasSzamol(sorok.map(r => r.harm_id));
+      const valt = uj.rendben - hatas.rendben;
+      await szabalyReszlet(id, d, utana, `<b>Döntés rögzítve.</b> ${valt > 0 ? `${valt} sor került „rendben” állapotba.` : 'A sorok állapota nem változott.'} ${uj.var ? `${uj.var} sor továbbra is döntésre vár, mert bennük <b>másik mező</b> is nyitott (pl. ${esc(uj.masik.slice(0, 3).join('; '))}).` : ''}${s.allapot === 'elfogadva' && valt === 0 ? ' Ez a szabály már korábban is érvényben volt, ezért a döntés nem változtatott az adatokon.' : ''}`);
+      if (utana) utana();
     } catch (e2) { btn.disabled = false; hibaKiir($('#szmsg', d), e2); }
   });
 }
