@@ -1549,6 +1549,12 @@ const JTABLA = { tbl_szemelyek: 'Alapadatok', tbl_elittag_reszletek: 'Életrajzi
   tbl_kituntetes_hazai: 'Kitüntetések', tbl_kituntetes_kulfoldi: 'Kitüntetések (1945 után / külföldi)', tbl_dijak: 'Díjak', tbl_csapat_ermek: 'Címek',
   tbl_szervezeti_tagsag_belfold: 'Szervezeti tagság', tbl_kulfolditartozkodasok: 'Külföldi tartózkodás', tbl_foglalkozasok: 'Foglalkozás' };
 const JMUV = { javit: '<span class="badge b-warn">javítás</span>', uj: '<span class="badge b-info">új adat</span>', megerosit: '<span class="badge b-ok">megerősítés</span>' };
+function jvErtek(j, v) {
+  if (v === null || v === undefined || v === '') return v;
+  if (['szuletesiev', 'ev', 'nevvaltoztataseve', 'diplomaev', 'kezdoev', 'befejezesev'].includes(j.mezo)) return String(ev(v));
+  if (j.mezo === 'halalev' && Number(v) < 100) return String(1900 + Number(v));
+  return String(v);
+}
 async function javaslatokLap() {
   location.hash = '';
   app.innerHTML = `<h2>Javaslatok</h2>
@@ -1585,9 +1591,10 @@ async function javaslatokLap() {
       const sor = j => `<div class="jv-sor">
           ${S.donto ? `<input type="checkbox" class="jv-cb" value="${j.javaslat_id}" checked>` : ''}
           <div class="jv-tart"><div>${JMUV[j.muvelet] || ''} ${esc(j.olvashato)}</div>
-            ${j.muvelet === 'javit' ? `<div class="small"><span class="muted">jelenleg:</span> ${dash(j.jelenlegi)} → <b>${esc(j.javasolt ?? '')}</b></div>` : ''}
+            ${j.muvelet === 'javit' ? `<div class="small"><span class="muted">jelenleg:</span> ${dash(jvErtek(j, j.jelenlegi))} → <b>${esc(jvErtek(j, j.javasolt) ?? '')}</b></div>` : ''}
+            ${j.muvelet === 'uj' && j.ertekek ? `<div class="small muted">${esc(Object.entries(j.ertekek).filter(([, v]) => v !== null && v !== '').map(([k, v]) => `${cimke(k)}: ${jvErtek({ mezo: k }, v)}`).join(' · '))}</div>` : ''}
             ${j.idezet ? `<details class="small"><summary class="muted">idézet a forrásból</summary><blockquote>${esc(j.idezet)}</blockquote></details>` : ''}
-            <div class="small muted">${forrasBadge(kt.forras.get(j.forras_id)?.megnevezes, kt.forras.get(j.forras_id)?.fazis)} ${esc(kt.forras.get(j.forras_id)?.megnevezes || '')}${j.hivatkozas ? ` · <a href="${esc(j.hivatkozas)}" target="_blank" rel="noopener">szócikk</a>` : ''}${j.megjegyzes ? ' · ' + esc(j.megjegyzes) : ''}</div>
+            <div class="small muted">${forrasBadge(kt.forras.get(j.forras_id)?.megnevezes, kt.forras.get(j.forras_id)?.fazis)} ${esc(kt.forras.get(j.forras_id)?.megnevezes || '')}${j.hivatkozas ? ` · <a href="${esc(j.hivatkozas)}" target="_blank" rel="noopener">szócikk</a>` : ''}${j.megjegyzes ? ` · <span class="${/ellenőrizendő|ellentmond/i.test(j.megjegyzes) ? 'badge b-warn' : ''}">${esc(j.megjegyzes)}</span>` : ''}</div>
           </div></div>`;
       const nev = (await q(sb.from('tbl_szemelyek').select('vezeteknev,keresztnev').eq('szemelyid', id).single())).data;
       d.innerHTML = `<div class="card">
