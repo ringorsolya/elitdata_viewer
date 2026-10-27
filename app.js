@@ -1601,19 +1601,29 @@ async function javaslatokLap() {
   location.hash = '';
   app.innerHTML = `<h2>Javaslatok</h2>
     <p class="muted">Külső forrásból (pl. Magyar Színházművészeti Lexikon) gyűjtött adatok. Jóváhagyásig semmi sem kerül az adatbázisba; jóváhagyáskor az eredeti adat megmarad, az új érték forrással és hivatkozással rögzül, és visszavonható.</p>
-    <div class="toolbar"><input type="search" id="jv-q" placeholder="Név…"><select id="jv-a"><option value="nyitott">Van nyitott javaslat</option><option value="">Mind</option></select><select id="jv-cs"><option value="">Minden csomag</option><option>Lexikon-összevetés 2026-10 (művészek)</option><option>Arcanum-lexikonok 2026-10 (művészek, MEK-ben nem szereplők)</option></select></div>
+    <div class="toolbar"><input type="search" id="jv-q" placeholder="Név…"><select id="jv-a"><option value="nyitott">Van nyitott javaslat</option><option value="">Mind</option></select><select id="jv-g"><option value="">Minden csoport</option></select><select id="jv-cs"><option value="">Minden csomag</option><option>Lexikon-összevetés 2026-10 (művészek)</option><option>Arcanum-lexikonok 2026-10 (művészek, MEK-ben nem szereplők)</option></select></div>
     <div class="grid2"><div><div class="tbl-wrap" id="jv-list"></div></div><div class="sticky" id="jv-detail"><div class="card empty">Válassz egy személyt.</div></div></div>`;
-  const st = { kereses: '', allapot: 'nyitott', csomag: '', kivalasztott: null };
+  const st = { kereses: '', allapot: 'nyitott', csomag: '', csoport: '', kivalasztott: null };
+  try {
+    const [{ data: cs }, { data: sajat }] = await Promise.all([
+      q(sb.from('tbl_csoportok').select('csoport_id,nev').order('nev')),
+      q(sb.from('tbl_munkatars_csoportok').select('csoport_id').eq('email', (S.user?.email || '').toLowerCase())),
+    ]);
+    const sj = new Set((sajat || []).map(r => r.csoport_id));
+    $('#jv-g').innerHTML = '<option value="">Minden csoport</option>' + cs.map(c => `<option value="${c.csoport_id}">${esc(c.nev)}${sj.has(c.csoport_id) ? ' – saját' : ''}</option>`).join('');
+    if (sj.size === 1) { st.csoport = String([...sj][0]); $('#jv-g').value = st.csoport; }
+  } catch (e) { /* a csoportlista nélkül is működik */ }
   const lista = async () => {
     const box = $('#jv-list'); box.innerHTML = '<div class="empty">Betöltés…</div>';
-    let qq = sb.from('v_javaslat_szemelyek').select('*');
+    let qq = st.csoport ? sb.from('v_javaslat_szemelyek_csoport').select('*').eq('csoport_id', Number(st.csoport)) : sb.from('v_javaslat_szemelyek').select('*');
     if (st.allapot === 'nyitott') qq = qq.gt('nyitott', 0);
     if (st.kereses) qq = qq.ilike('nev', `%${st.kereses}%`);
-    if (st.csomag) qq = qq.eq('csomag', st.csomag);
+    if (st.csomag) qq = qq.ilike('csomag', `%${st.csomag}%`);
     try {
       const { data } = await q(qq.order('nev').limit(500));
-      box.innerHTML = data.length ? `<table><thead><tr><th>Név</th><th>Nyitott</th><th>Javítás / új / megerősítés</th><th>Kész</th></tr></thead><tbody>${
+      box.innerHTML = data.length ? `<table><thead><tr><th>Név</th><th>Csoport</th><th>Nyitott</th><th>Javítás / új / megerősítés</th><th>Kész</th></tr></thead><tbody>${
         data.map(r => `<tr class="click ${st.kivalasztott === r.szemelyid ? 'sel' : ''}" data-id="${r.szemelyid}"><td><b>${esc(r.nev)}</b> <span class="muted small">${esc(ev(r.szuletesiev))}</span></td>
+          <td class="small muted">${esc((r.csoportok || '').replace(/ \([^)]*\)/g, ''))}</td>
           <td>${r.nyitott ? `<span class="badge b-warn">${r.nyitott}</span>` : ''}</td><td class="small">${r.javitas} / ${r.uj_sor} / ${r.megerosites}</td>
           <td class="small">${r.elfogadva ? `<span class="badge b-ok">${r.elfogadva} elfogadva</span>` : ''} ${r.elutasitva ? `<span class="badge b-gray">${r.elutasitva} elutasítva</span>` : ''}</td></tr>`).join('')}</tbody></table>`
         : '<div class="empty">Nincs javaslat.</div>';
@@ -1668,6 +1678,7 @@ async function javaslatokLap() {
   };
   $('#jv-q').addEventListener('input', debounce(e => { st.kereses = tiszta(e.target.value); lista(); }));
   $('#jv-a').addEventListener('change', e => { st.allapot = e.target.value; lista(); });
+  $('#jv-g').addEventListener('change', e => { st.csoport = e.target.value; lista(); });
   $('#jv-cs').addEventListener('change', e => { st.csomag = e.target.value; lista(); });
   lista();
 }
