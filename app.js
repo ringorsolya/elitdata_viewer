@@ -1601,14 +1601,15 @@ async function javaslatokLap() {
   location.hash = '';
   app.innerHTML = `<h2>Javaslatok</h2>
     <p class="muted">Külső forrásból (pl. Magyar Színházművészeti Lexikon) gyűjtött adatok. Jóváhagyásig semmi sem kerül az adatbázisba; jóváhagyáskor az eredeti adat megmarad, az új érték forrással és hivatkozással rögzül, és visszavonható.</p>
-    <div class="toolbar"><input type="search" id="jv-q" placeholder="Név…"><select id="jv-a"><option value="nyitott">Van nyitott javaslat</option><option value="">Mind</option></select></div>
+    <div class="toolbar"><input type="search" id="jv-q" placeholder="Név…"><select id="jv-a"><option value="nyitott">Van nyitott javaslat</option><option value="">Mind</option></select><select id="jv-cs"><option value="">Minden csomag</option><option>Lexikon-összevetés 2026-10 (művészek)</option><option>Arcanum-lexikonok 2026-10 (művészek, MEK-ben nem szereplők)</option></select></div>
     <div class="grid2"><div><div class="tbl-wrap" id="jv-list"></div></div><div class="sticky" id="jv-detail"><div class="card empty">Válassz egy személyt.</div></div></div>`;
-  const st = { kereses: '', allapot: 'nyitott', kivalasztott: null };
+  const st = { kereses: '', allapot: 'nyitott', csomag: '', kivalasztott: null };
   const lista = async () => {
     const box = $('#jv-list'); box.innerHTML = '<div class="empty">Betöltés…</div>';
     let qq = sb.from('v_javaslat_szemelyek').select('*');
     if (st.allapot === 'nyitott') qq = qq.gt('nyitott', 0);
     if (st.kereses) qq = qq.ilike('nev', `%${st.kereses}%`);
+    if (st.csomag) qq = qq.eq('csomag', st.csomag);
     try {
       const { data } = await q(qq.order('nev').limit(500));
       box.innerHTML = data.length ? `<table><thead><tr><th>Név</th><th>Nyitott</th><th>Javítás / új / megerősítés</th><th>Kész</th></tr></thead><tbody>${
@@ -1667,6 +1668,7 @@ async function javaslatokLap() {
   };
   $('#jv-q').addEventListener('input', debounce(e => { st.kereses = tiszta(e.target.value); lista(); }));
   $('#jv-a').addEventListener('change', e => { st.allapot = e.target.value; lista(); });
+  $('#jv-cs').addEventListener('change', e => { st.csomag = e.target.value; lista(); });
   lista();
 }
 
