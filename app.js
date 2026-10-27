@@ -800,7 +800,7 @@ function javitasLista(P, fb) {
 function forrasValaszto(prefix) {
   const fr = [...S.kt.forras.values()].filter(f => f.fazis !== 'KIG-féle kutatás' && !/^(harmonizációs|kódlista|kódolói|származtatott)/.test(f.tipus || ''))
     .sort((a, b) => (b.tipus === 'belső ellenőrzés') - (a.tipus === 'belső ellenőrzés'));
-  return `<fieldset class="forras-box"><legend>Forrás (kötelező)</legend>
+  return `<fieldset class="forras-box"><legend>Forrás (kötelező${prefix === 'kf' ? ' a karrieradatok javításához; a harmonizált besoroláshoz nem kell' : ''})</legend>
     <label>Forrás<select id="${prefix}-fs"><option value="">— válassz —</option>${fr.map(f => `<option value="${f.forras_id}">${esc(f.megnevezes)}</option>`).join('')}<option value="uj">+ Új forrás felvétele…</option></select></label>
     <div id="${prefix}-uj" class="hidden form" style="margin-top:0">
       <label>Új forrás megnevezése<input id="${prefix}-un" placeholder="pl. Magyar Életrajzi Lexikon 1–4."></label>
@@ -1217,8 +1217,11 @@ async function karrierSzerk(karrierid, d, utana) {
     q(sb.from('tbl_sor_javitasok').select('*').eq('tabla', 'tbl_karrier').eq('rekord_id', karrierid).order('rogzitve', { ascending: false })),
   ]);
   const { data: sz } = await q(sb.from('tbl_szemelyek').select('vezeteknev,keresztnev,szuletesiev').eq('szemelyid', k.szemelyid).single());
-  await kodtablak();
+  await kodtablak(); const kd = await kodok();
   const szul = ev(sz.szuletesiev), szerk = await szerkHet(k.szemelyid), e0 = k.eredeti || {};
+  const HM = [['harmonizalt', 'Harmonizált foglalkozás', kd.harmonizalt], ['hivatas1', 'Hivatás1', ['NINCS', ...kd.hivatas1]], ['hivatas2', 'Hivatás2', ['NINCS', ...kd.hivatas2]], ['specifikacio', 'Specifikáció', null]];
+  const hmMezo = ([m, cim, lista]) => { const v = k[m] || '';
+    return `<label data-hm="${m}" data-eredeti="${esc(v)}">${cim}${lista ? `<select id="kh-${m}"><option value="">(üres)</option>${(lista.includes(v) || !v ? lista : [v, ...lista]).map(x => `<option ${x === v ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>` : `<input id="kh-${m}" value="${esc(v)}">`}</label>`; };
   const evkod = k.leiras && k.leiras.startsWith('? kód');
   const jel = evkod ? evkodJeloltek(k.leiras, szul) : [];
   const ertek = m => k[m] === null || k[m] === undefined ? '' : String(m.endsWith('ev') ? ev(k[m], szul) : k[m]);
@@ -1234,10 +1237,13 @@ async function karrierSzerk(karrierid, d, utana) {
         ${jel.some(j => j[3]) ? '<p class="small muted" style="margin:4px 0 0">A kódban a második év kisebb az elsőnél, ez valószínűleg rögzítési hiba. A ⇄ jelű javaslat a két év felcserélésével készült. Csak akkor válaszd, ha a forrás alátámasztja, és a Megjegyzésben jelezd.</p>' : ''}
         ${!jel.some(j => j[2]) ? '<p class="small muted" style="margin:4px 0 0">Egyik feloldás sem illik a születési évhez: valószínűleg elírás van a forrásban. Nézd meg a forrást, és írd be kézzel a helyes éveket.</p>' : ''}</div>` : ''}
       <div class="szerk-racs">${KMEZO.map(([m, cim, tip]) => `<label data-m="${m}" data-tip="${tip}" data-eredeti="${esc(ertek(m))}">${cim}<input id="kf-${m}" value="${esc(ertek(m))}" ${tip === 'ev' ? 'inputmode="numeric" placeholder="éééé"' : ''}></label>`).join('')}</div>
+      <h4 style="margin:14px 0 4px">Harmonizált besorolás</h4>
+      <p class="small muted" style="margin:0 0 6px">${k.harm_id ? `Jelenleg: ${allapotBadge(k.harm_allapot)}${k.nyitott_ertekek ? ' ' + esc(k.nyitott_ertekek) : ''}. A módosítás egyedi döntésként kerül be; a kódoló által beírt érték megmarad. Üresre állítva a kódolói érték érvényes újra.` : 'Ez az állomás még nincs harmonizálva; mentéskor új besorolás jön létre (forrás: ElitData2026 – döntés a nézegetőben).'} Ha van harmonizált foglalkozás vagy Hivatás1, az üres Hivatás2 NINCS-et jelent.</p>
+      <div class="szerk-racs">${HM.map(hmMezo).join('')}</div>
       <label class="torles"><input type="checkbox" id="kf-torol"> A karrierállomás törlése (téves vagy kettős sor) – a sor nem vész el, csak érvénytelennek jelöljük, és visszavonható</label>
       ${forrasValaszto('kf')}
       <div class="toolbar"><button class="btn primary" type="submit">Mentés</button></div><div id="kf-msg"></div>
-      <p class="muted small">A javítás új bejegyzésként kerül be; az eredeti sor és a harmonizációs besorolása változatlan marad.</p></form>`
+      <p class="muted small">A javítás új bejegyzésként kerül be; az eredeti adat megmarad és a javítás visszavonható.</p></form>`
       : '<p class="msg info">Ennek a személynek az adatait nem javíthatod (a hozzád rendelt csoporton kívül esik).</p>'}
     ${jav && jav.length ? `<h4>Korábbi javítások</h4><div class="tbl-wrap"><table><thead><tr><th>Mező</th><th>Új érték</th><th>Forrás</th><th>Hivatkozás</th><th>Ki, mikor</th><th></th></tr></thead><tbody>${
       jav.map(x => `<tr class="${x.elfogadott === false ? 'visszavont' : ''}"><td>${esc((KMEZO.find(m => m[0] === x.mezo) || [, x.mezo])[1])}</td><td>${dash(x.ertek)}</td>
@@ -1269,12 +1275,15 @@ async function karrierSzerk(karrierid, d, utana) {
       if (!valt._torles && evkod && (valt.elsoev !== undefined || valt.utolsoev !== undefined)) {
         for (const m of ['elsoev', 'utolsoev']) if (valt[m] === undefined && $('#kf-' + m).value.trim()) valt[m] = $('#kf-' + m).value.trim();
       }
-      if (!Object.keys(valt).length) { msg($('#kf-msg'), 'Nem változott semmi.', 'info'); return; }
+      const hvalt = {};
+      if (!valt._torles) d.querySelectorAll('label[data-hm]').forEach(l => { const uj = l.querySelector('select,input').value.trim(); if (uj !== l.dataset.eredeti) hvalt[l.dataset.hm] = uj; });
+      if (!Object.keys(valt).length && !Object.keys(hvalt).length) { msg($('#kf-msg'), 'Nem változott semmi.', 'info'); return; }
       const a = Number(valt.elsoev ?? $('#kf-elsoev').value), b2 = Number(valt.utolsoev ?? $('#kf-utolsoev').value);
       if (a && b2 && b2 < a) throw new Error('Az utolsó év nem lehet korábbi az első évnél.');
       btn.disabled = true;
-      const fid = await forrasAzonosito('kf');
-      await q(sb.rpc('javit_sor', { p_tabla: 'tbl_karrier', p_rekord_id: karrierid, p_valtozasok: valt, p_forras_id: fid, p_hivatkozas: $('#kf-hiv').value || null, p_megjegyzes: $('#kf-megj').value || null }));
+      const fid = Object.keys(valt).length ? await forrasAzonosito('kf') : null;
+      if (Object.keys(valt).length) await q(sb.rpc('javit_sor', { p_tabla: 'tbl_karrier', p_rekord_id: karrierid, p_valtozasok: valt, p_forras_id: fid, p_hivatkozas: $('#kf-hiv').value || null, p_megjegyzes: $('#kf-megj').value || null }));
+      if (Object.keys(hvalt).length) await q(sb.rpc('karrier_harm_ment', { p_karrierid: karrierid, p_ertekek: hvalt, p_megjegyzes: $('#kf-megj').value || $('#kf-hiv').value || null }));
       msg($('#kf-msg'), 'A javítás rögzítve.', 'ok');
       setTimeout(utana, 900);
     } catch (err) { btn.disabled = false; hibaKiir($('#kf-msg'), err); }
