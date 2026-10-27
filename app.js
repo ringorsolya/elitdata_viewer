@@ -52,7 +52,7 @@ function allapotBadge(a) {
 const MEZONEV = { harmonizalt: 'Harmonizált foglalkozás', hivatas1: 'Hivatás1', hivatas2: 'Hivatás2', specifikacio: 'Specifikáció' };
 const SZEMELYMEZO = {
   vezeteknev: 'Vezetéknév', keresztnev: 'Keresztnév', szuletesiev: 'Születési év', szuletesihely: 'Születési hely',
-  szuletesiorszagkod: 'Születési ország (kód)', nemzetisegkod: 'Nemzetiség (kód)', doktoricim: 'Doktori cím', vegzettsegid: 'Végzettség (kód)',
+  szuletesiorszagkod: 'Születési ország (kód)', nemzetisegkod: 'Nemzetiség', doktoricim: 'Doktori cím', vegzettsegid: 'Végzettség (kód)',
   szerzetese: 'Szerzetes', halalev: 'Halálozás éve', halalho: 'Halálozás hónapja', halalnap: 'Halálozás napja', halalhely: 'Halálozás helye',
   halalhelymegyekod: 'Halálozás helye (megyekód)', halalmodja: 'Halál módja (kód)', halalpontose: 'Halálozás pontos (kód)',
   testverekszama: 'Testvérek száma', gyerekekszama: 'Gyerekek száma', hazassagokszama: 'Házasságok száma', elsohazassagev: 'Első házasság éve',
@@ -523,7 +523,7 @@ async function szemelyekLap() {
 // A kódtáblák egyszer töltődnek be; ahol nincs megbízható kódtábla, a kód „kód N” formában látszik (lásd KODKONYV_HIANY).
 async function kodtablak() {
   if (S.kt) return S.kt;
-  const [vm, kit, kk, part, szerz, zst, fr, egy, idp, osz, dipl] = await Promise.all([
+  const [vm, kit, kk, part, szerz, zst, fr, egy, idp, osz, dipl, hmod, nemz] = await Promise.all([
     q(sb.from('kod_varmegyek').select('kodertek,kodnev')),
     q(sb.from('tbl_kod_kituntetes').select('lista,kituntetekod,kituntetenev')),
     q(sb.from('tbl_kod_kulfoldikit').select('orszag,kodertek,kituntetenev')),
@@ -535,12 +535,16 @@ async function kodtablak() {
     q(sb.from('tbl_foglalkozas_idopont').select('idopontkod,idopontnev,sorrend').order('sorrend')),
     q(sb.from('v_szerk_oszlopok').select('*').order('sorrend').range(0, 4999)),
     q(sb.from('kod_diplomafajta').select('kodertek,nev,statusz').order('kodertek')),
+    q(sb.from('kod_halalmodja').select('kodertek,nev').order('kodertek')),
+    q(sb.from('kod_nemzetiseg').select('lista,kod,nev').order('kod')),
   ]);
   const m = (rows, k, v) => new Map(rows.map(r => [Number(r[k]), r[v]]));
   S.kt = {
     hely: m(vm.data, 'kodertek', 'kodnev'),
     kitHazai: m(kit.data.filter(r => r.lista === 1), 'kituntetekod', 'kituntetenev'),
     diploma: new Map(dipl.data.map(r => [Number(r.kodertek), r])),
+    halalmod: m(hmod.data, 'kodertek', 'nev'),
+    nemzetiseg: m(nemz.data.filter(r => r.lista === 1), 'kod', 'nev'),
     kitKulf: kk.data,
     kitLista: [2, 3, 4, 5].reduce((o, l) => (o[l] = m(kit.data.filter(r => r.lista === l), 'kituntetekod', 'kituntetenev'), o), {}),
     part: m(part.data, 'partkod', 'partnev'),
@@ -593,7 +597,7 @@ function profilRender(P, id) {
     mezo('tbl_szemelyek', sz, 'szuletesiev', 'Születési év', evF),
     mezo('tbl_szemelyek', sz, 'szuletesihely', 'Születési hely', txt),
     mezo('tbl_szemelyek', sz, 'szuletesiorszagkod', 'Születési vármegye / ország', helyF),
-    mezo('tbl_szemelyek', sz, 'nemzetisegkod', 'Nemzetiség (vélelmezett)', kod),
+    mezo('tbl_szemelyek', sz, 'nemzetisegkod', 'Nemzetiség (forrás szerint)', v => v === null || v === undefined || v === '' ? null : (kt.nemzetiseg.get(Number(v)) ? esc(kt.nemzetiseg.get(Number(v))) : kod(v))),
     mezo('tbl_szemelyek', sz, 'doktoricim', 'Doktori cím', boolF),
     mezo('tbl_szemelyek', sz, 'szerzetese', 'Szerzetes', boolF),
     mezo('tbl_elittag_reszletek', r, 'szerzetesrende', 'Szerzetesrend', v => v === null || v === undefined ? null : (kt.szerzetes.get(Number(v)) ? esc(kt.szerzetes.get(Number(v))) : kod(v))),
@@ -609,7 +613,7 @@ function profilRender(P, id) {
       return kvSor('Halálozás ideje', sz ? (jav ? `<span title="Javított érték; eredetileg: ${esc(eredeti || '—')}">${esc(sz)}</span>` : esc(sz)) : null, (jav || he).forras || r.forras_id); })(),
     mezo('tbl_elittag_reszletek', r, 'halalhely', 'Halálozás helye', txt),
     mezo('tbl_elittag_reszletek', r, 'halalhelymegyekod', 'Halálozás vármegye / ország', helyF),
-    mezo('tbl_elittag_reszletek', r, 'halalmodja', 'Halál módja', kod),
+    mezo('tbl_elittag_reszletek', r, 'halalmodja', 'Halál módja', v => v === null || v === undefined || v === '' ? null : (kt.halalmod.get(Number(v)) ? esc(kt.halalmod.get(Number(v))) : kod(v))),
     mezo('tbl_elittag_reszletek', r, 'halalmodjaegyeb', 'Halál módja (szövegesen)', txt),
     mezo('tbl_elittag_reszletek', r, 'halalpontose', 'Halálozási adat pontossága', kod),
   ]);
@@ -746,13 +750,13 @@ function profilRender(P, id) {
 const JAVITHATO = [
   ['tbl_szemelyek', 'vezeteknev', 'Vezetéknév', 'text'], ['tbl_szemelyek', 'keresztnev', 'Keresztnév', 'text'],
   ['tbl_szemelyek', 'szuletesiev', 'Születési év', 'ev'], ['tbl_szemelyek', 'szuletesihely', 'Születési hely', 'text'],
-  ['tbl_szemelyek', 'szuletesiorszagkod', 'Születési vármegye / ország', 'hely'], ['tbl_szemelyek', 'nemzetisegkod', 'Nemzetiség (kód)', 'kod'],
+  ['tbl_szemelyek', 'szuletesiorszagkod', 'Születési vármegye / ország', 'hely'], ['tbl_szemelyek', 'nemzetisegkod', 'Nemzetiség (forrás szerint)', 'nemz'],
   ['tbl_szemelyek', 'doktoricim', 'Doktori cím', 'bool'], ['tbl_szemelyek', 'szerzetese', 'Szerzetes', 'bool'],
   ['tbl_elittag_reszletek', 'szerzetesrende', 'Szerzetesrend', 'szerzetes'], ['tbl_elittag_reszletek', 'szerzetesbelepesev', 'Rendbe lépés éve', 'ev'],
   ['tbl_elittag_reszletek', 'szerzeteskilepesev', 'Rendből kilépés éve', 'ev'],
   ['tbl_elittag_reszletek', 'halalev', 'Halálozás éve', 'ev'], ['tbl_elittag_reszletek', 'halalho', 'Halálozás hónapja', 'text'],
   ['tbl_elittag_reszletek', 'halalnap', 'Halálozás napja', 'text'], ['tbl_elittag_reszletek', 'halalhely', 'Halálozás helye', 'text'],
-  ['tbl_elittag_reszletek', 'halalhelymegyekod', 'Halálozás vármegye / ország', 'hely'], ['tbl_elittag_reszletek', 'halalmodja', 'Halál módja (kód)', 'kod'],
+  ['tbl_elittag_reszletek', 'halalhelymegyekod', 'Halálozás vármegye / ország', 'hely'], ['tbl_elittag_reszletek', 'halalmodja', 'Halál módja', 'halalmod'],
   ['tbl_elittag_reszletek', 'halalmodjaegyeb', 'Halál módja (szövegesen)', 'text'],
   ['tbl_elittag_reszletek', 'testverekszama', 'Testvérek száma', 'text'], ['tbl_elittag_reszletek', 'hazassagokszama', 'Házasságok száma', 'text'],
   ['tbl_elittag_reszletek', 'elsohazassagev', 'Első házasság éve', 'ev'], ['tbl_elittag_reszletek', 'hazaskor', 'Életkor a házasságkötéskor', 'text'],
@@ -813,6 +817,7 @@ function alapSzerkeszt(P, id) {
     if (tip === 'hely') inp = `<select id="${idd}"><option value="">—</option>${helyOpt}${v && !kt.hely.has(Number(v)) ? `<option value="${esc(v)}">kód ${esc(v)}</option>` : ''}</select>`;
     else if (tip === 'bool') inp = `<select id="${idd}"><option value="">—</option><option value="1">igen</option><option value="0">nem</option></select>`;
     else if (tip === 'szerzetes') inp = `<select id="${idd}"><option value="">—</option>${szerzOpt}</select>`;
+    else if (tip === 'nemz' || tip === 'halalmod') { const mp = tip === 'nemz' ? kt.nemzetiseg : kt.halalmod; inp = `<select id="${idd}"><option value="">—</option>${[...mp.entries()].map(([k, n]) => `<option value="${k}">${k} – ${esc(n)}</option>`).join('')}${v !== '' && !mp.has(Number(v)) ? `<option value="${esc(v)}">kód ${esc(v)}</option>` : ''}</select>`; }
     else inp = `<input id="${idd}" ${tip === 'ev' ? 'inputmode="numeric" placeholder="éééé"' : ''}>`;
     return `<label data-k="${t}.${m}" data-tip="${tip}" data-eredeti="${esc(v)}">${esc(cim)}${inp}</label>`;
   };
