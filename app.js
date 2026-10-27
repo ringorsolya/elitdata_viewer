@@ -450,12 +450,25 @@ async function szemelyekLap() {
     <p class="muted">Az elittagok és családtagjaik. Kattints egy névre az adatlaphoz; a családtagoknál az „Elittag” oszlopban a hozzájuk tartozó elittag.</p>
     <div class="toolbar"><input type="search" id="sz-q" placeholder="Név…">
       <select id="sz-kik"><option value="elit">Elittagok</option><option value="csalad">Családtagok</option><option value="mind">Mindenki</option></select>
-      <select id="sz-f"><option value="">Mind</option><option value="nyitott">Van nyitott harmonizáció</option><option value="kerdes">Van nyitott kérdés</option><option value="nokarr">Nincs karrieradat</option></select></div>
+      <select id="sz-f"><option value="">Mind</option><option value="nyitott">Van nyitott harmonizáció</option><option value="kerdes">Van nyitott kérdés</option><option value="nokarr">Nincs karrieradat</option></select>
+      <select id="sz-h"><option value="">Minden foglalkozás / hivatás</option></select></div>
     <div class="tbl-wrap" id="sz-list"></div><div id="sz-pager"></div>`;
-  const st = { page: 0, kereses: '', szuro: '', kik: 'elit' };
+  const st = { page: 0, kereses: '', szuro: '', kik: 'elit', hiv: '', hivIds: null };
+  kodok().then(k => {
+    const ertekek = [...new Set([...k.harmonizalt, ...k.hivatas1, ...k.hivatas2])].sort((a, b) => a.localeCompare(b, 'hu'));
+    $('#sz-h').insertAdjacentHTML('beforeend', ertekek.map(v => `<option>${esc(v)}</option>`).join(''));
+  }).catch(() => {});
   const lista = async () => {
     const box = $('#sz-list'); box.innerHTML = '<div class="empty">Betöltés…</div>';
     let qq = sb.from('v_szemely_minden').select('*', { count: 'exact' });
+    if (st.hiv) {
+      if (!st.hivIds) {
+        const v = st.hiv.replace(/["\\]/g, m => '\\' + m);
+        const sorok = await mindLeker(() => sb.from('v_karrier_harmonizalt').select('szemelyid').or(`harmonizalt.eq."${v}",hivatas1.eq."${v}",hivatas2.eq."${v}"`).order('harm_id'));
+        st.hivIds = [...new Set(sorok.map(r => r.szemelyid).filter(Boolean))];
+      }
+      qq = qq.in('szemelyid', st.hivIds.length ? st.hivIds : [-1]);
+    }
     if (st.kik === 'elit') qq = qq.eq('elittage', 1); else if (st.kik === 'csalad') qq = qq.neq('elittage', 1);
     if (st.kereses) { const t = st.kereses.split(/\s+/); qq = t.length > 1 ? qq.ilike('vezeteknev', `%${t[0]}%`).ilike('keresztnev', `%${t.slice(1).join(' ')}%`) : qq.or(`vezeteknev.ilike.%${t[0]}%,keresztnev.ilike.%${t[0]}%`); }
     if (st.szuro === 'nyitott') qq = qq.gt('harm_nyitott', 0);
@@ -463,11 +476,27 @@ async function szemelyekLap() {
     if (st.szuro === 'nokarr') qq = qq.eq('karrier_db', 0);
     try {
       const { data, count } = await q(qq.order('vezeteknev').order('keresztnev').range(st.page * PAGE, st.page * PAGE + PAGE - 1));
-      box.innerHTML = data.length ? `<table><thead><tr><th>Név</th><th>Született</th><th>Szerep</th><th>Elittag</th><th>Karrier / foglalkozás</th><th>Nyitott</th></tr></thead><tbody>${
+      // harmonizált foglalkozás és hivatások az oldalon látható elittagokra
+      const elitIds = data.filter(r => r.elittage === 1).map(r => r.szemelyid), H = new Map();
+      if (elitIds.length) {
+        const hs = await mindLeker(() => sb.from('v_karrier_harmonizalt').select('szemelyid,harmonizalt,hivatas1,hivatas2').in('szemelyid', elitIds).order('harm_id'));
+        for (const r of hs) {
+          if (!H.has(r.szemelyid)) H.set(r.szemelyid, { h: new Map(), h1: new Map(), h2: new Map() });
+          const x = H.get(r.szemelyid);
+          for (const [m, k] of [[x.h, 'harmonizalt'], [x.h1, 'hivatas1'], [x.h2, 'hivatas2']]) {
+            const v = r[k]; if (v && v.toUpperCase() !== 'NINCS') m.set(v, (m.get(v) || 0) + 1);
+          }
+        }
+      }
+      const ert = (m, n = 3) => { if (!m || !m.size) return ''; const t = [...m.entries()].sort((a, b) => b[1] - a[1]); return t.slice(0, n).map(([v, k]) => `${esc(v)}${k > 1 ? ` <span class="muted">(${k})</span>` : ''}`).join(', ') + (t.length > n ? ` <span class="muted">+${t.length - n}</span>` : ''); };
+      const kiem = v => st.hiv ? v.replace(new RegExp(esc(st.hiv).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '<mark>$&</mark>') : v;
+      box.innerHTML = data.length ? `<table><thead><tr><th>Név</th><th>Született</th><th>Szerep</th><th>Elittag</th><th>Foglalkozás (harmonizált)</th><th>Hivatás1</th><th>Hivatás2</th><th>Nyitott</th></tr></thead><tbody>${
         data.map(r => `<tr class="click" data-id="${r.szemelyid}"><td><b>${esc(r.vezeteknev)} ${esc(r.keresztnev)}</b></td><td>${dash(r.szuletesiev)} <span class="muted small">${esc(r.szuletesihely || '')}</span></td>
           <td class="small">${r.elittage === 1 ? '<span class="badge b-info">elittag</span>' : esc(szerepNev(r.szerep))}</td>
           <td class="small">${r.elittag_id ? `<a href="#szemely=${r.elittag_id}" data-elit="${r.elittag_id}">${esc(r.elittag_nev)}</a>` : ''}</td>
-          <td class="small">${r.elittage === 1 ? `${r.karrier_db} karrierállomás` : esc(r.foglalkozasok || '')}</td>
+          ${r.elittage === 1
+            ? `<td class="small">${kiem(ert(H.get(r.szemelyid)?.h)) || (H.has(r.szemelyid) ? '<span class="muted">—</span>' : `<span class="muted">${r.karrier_db ? 'nincs harmonizálva' : 'nincs karrieradat'}</span>`)}</td><td class="small">${kiem(ert(H.get(r.szemelyid)?.h1))}</td><td class="small">${kiem(ert(H.get(r.szemelyid)?.h2))}</td>`
+            : `<td class="small" colspan="3">${esc(r.foglalkozasok || '')}</td>`}
           <td>${r.harm_nyitott ? `<span class="badge b-warn">${r.harm_nyitott} sor</span>` : ''} ${r.nyitott_kerdes ? `<span class="badge b-bad">${r.nyitott_kerdes} kérdés</span>` : ''}</td></tr>`).join('')}</tbody></table>`
         : '<div class="empty">Nincs találat.</div>';
       box.querySelector('tbody')?.addEventListener('click', e => { e.preventDefault(); const a = e.target.closest('[data-elit]'); if (a) return szemelyLap(Number(a.dataset.elit)); const tr = e.target.closest('tr'); if (tr) szemelyLap(Number(tr.dataset.id)); });
@@ -477,6 +506,7 @@ async function szemelyekLap() {
   $('#sz-q').addEventListener('input', debounce(e => { st.kereses = tiszta(e.target.value); st.page = 0; lista(); }));
   $('#sz-f').addEventListener('change', e => { st.szuro = e.target.value; st.page = 0; lista(); });
   $('#sz-kik').addEventListener('change', e => { st.kik = e.target.value; st.page = 0; lista(); });
+  $('#sz-h').addEventListener('change', e => { st.hiv = e.target.value; st.hivIds = null; st.page = 0; lista(); });
   lista();
 }
 
