@@ -21,6 +21,15 @@ function esc(v) {
   return String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 const dash = v => (v === null || v === undefined || v === '' ? '<span class="muted">—</span>' : esc(v));
+// harmonizált mező megjelenítése: érték · NINCS (kifejezetten nincs) · döntésre váró beírt érték (sárga) · — (nincs adat)
+const HARM_CIMKE = { harmonizalt: 'harmonizált: ', hivatas1: 'Hivatás1: ', hivatas2: 'Hivatás2: ' };
+function harmF(k, m) {
+  const v = k[m];
+  if (v !== null && v !== undefined && v !== '') return String(v).toUpperCase() === 'NINCS' ? 'NINCS' : esc(v);
+  const cim = HARM_CIMKE[m], ny = (k.nyitott_ertekek || '').split('; ').find(x => cim && x.startsWith(cim));
+  if (ny) return `<span class="badge b-warn" title="Döntésre vár – a kódoló által beírt érték">${esc(ny.slice(cim.length))} ?</span>`;
+  return '<span class="muted">—</span>';
+}
 // az alapadatbázis éveit rövidítve tárolja: 3 jegy = 1000 + n (pl. 905 = 1905), 2 jegy = 18xx/19xx (a születési év dönt)
 function ev(y, szul) {
   if (y === null || y === undefined || y === '') return '';
@@ -634,7 +643,7 @@ function profilRender(P, id) {
       const evJav = jm.includes('elsoev') || jm.includes('utolsoev');
       return `<tr ${k.harm_id ? `class="click" data-h="${k.harm_id}"` : ''}><td>${idoszak(k.elsoev, k.utolsoev)}${evJav ? jv(jm.includes('elsoev') ? 'elsoev' : 'utolsoev') : (k.leiras && k.leiras.startsWith('? kód') ? ` <span class="badge b-warn">${esc(k.leiras)}</span>` : '')}</td>
       <td>${dash(k.foglalkozas)}${jv('foglalkozas')}</td><td class="small">${dash(k.munkahely)}${jv('munkahely')}</td><td class="small">${dash(k.helyszin)}${jv('helyszin')}</td><td>${forrasBadge(k.forras, k.fazis)}</td>
-      <td>${dash(k.harmonizalt)}</td><td>${dash(k.hivatas1)}</td><td>${dash(k.hivatas2)}</td><td class="small">${dash(k.specifikacio)}</td>
+      <td>${harmF(k, 'harmonizalt')}</td><td>${harmF(k, 'hivatas1')}</td><td>${harmF(k, 'hivatas2')}</td><td class="small">${dash(k.specifikacio)}</td>
       <td>${k.harm_id ? forrasBadge(k.harm_forras || 'ElitData2026', 'ElitData2026') : ''}</td>
       <td>${k.harm_id ? allapotBadge(k.harm_allapot) : '<span class="muted small">nincs besorolva</span>'}</td>${S.szerkEz ? `<td><button class="btn small" data-kj="${k.karrierid}">Javítás</button></td>` : ''}</tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nincs karrieradat.</p>';
   const karrierpoz = tabla(P.karrierpoziciok, [{ c: 'Belépés éve', f: s => evF(s.belepesev) }, { c: 'Pozíciókód évenként', f: s => pozkod(s), cls: 'small' }]);
@@ -1313,7 +1322,7 @@ function csoportTagok(c, tagok) {
       && (!st.f || (st.f === 'nincs' ? !r.ellenorzes : st.f === 'teendo' ? (r.evkod_db || r.harm_nyitott || r.nyitott_kerdes || r.besorolatlan) : r.ellenorzes === st.f)));
     $('#ct-list').innerHTML = t.length ? `<table><thead><tr><th>Név</th><th>Élt</th><th>Hivatás1 / Hivatás2</th><th>Karrier</th><th>Nyitott tételek</th><th>Ellenőrzés</th><th>Más csoportban is</th><th></th></tr></thead><tbody>${
       t.map(r => `<tr class="click" data-id="${r.szemelyid}"><td><b>${esc(r.nev)}</b></td><td class="small">${dash(r.szuletesiev)}–${r.halalev ? esc(ev(r.halalev, r.szuletesiev)) : '?'}</td>
-        <td class="small">${dash(r.hivatas1)}${r.hivatas2 ? ' / ' + esc(r.hivatas2) : ''}</td><td>${r.csoport_allomas_db ? `${r.csoport_allomas_db} <span class="muted small">/ ${r.karrier_db}</span>` : r.karrier_db}</td>
+        <td class="small">${dash(r.hivatas1)}${r.hivatas2 && r.hivatas2 !== 'NINCS' ? ' / ' + esc(r.hivatas2) : ''}</td><td>${r.csoport_allomas_db ? `${r.csoport_allomas_db} <span class="muted small">/ ${r.karrier_db}</span>` : r.karrier_db}</td>
         <td>${r.evkod_db ? `<span class="badge b-warn">${r.evkod_db} évkód</span> ` : ''}${r.harm_nyitott ? `<span class="badge b-warn">${r.harm_nyitott} besorolás</span> ` : ''}${r.besorolatlan ? `<span class="badge b-gray">${r.besorolatlan} besorolatlan</span> ` : ''}${r.nyitott_kerdes ? `<span class="badge b-bad">${r.nyitott_kerdes} kérdés</span>` : ''}</td>
         <td class="small">${ELL_BADGE[r.ellenorzes] || '<span class="muted">—</span>'}${r.ellenorizte ? `<br><span class="muted">${esc(r.ellenorizte)}</span>` : ''}${r.ellenorzes_megjegyzes ? `<br>${esc(r.ellenorzes_megjegyzes)}` : ''}</td>
         <td class="small">${masCsoportok(r.mas_csoportok)}</td>
@@ -1386,7 +1395,7 @@ async function csoportKarrier(c) {
           return `<tr data-h="${k.harm_id || ''}" data-sz="${k.szemelyid}" class="${uj ? 'uj-szemely' : ''}"><td>${uj ? `<a href="#szemely=${k.szemelyid}" data-szem="${k.szemelyid}"><b>${esc(k.nev)}</b></a> <span class="muted small">${dash(k.szuletesiev)}</span>` : ''}
             ${k.leiras && k.leiras.startsWith('? kód') && !(k.javitott_mezok || []).length ? `<br><span class="badge b-warn">${esc(k.leiras)}</span>` : ''}</td>
             ${cella(k, 'elsoev')}${cella(k, 'utolsoev')}${cella(k, 'foglalkozas', 'w-fogl')}${cella(k, 'munkahely', 'w-mh')}${cella(k, 'helyszin')}
-            <td class="small">${dash(k.harmonizalt)}</td><td class="small">${dash(k.hivatas1)}</td><td class="small">${dash(k.hivatas2)}</td>
+            <td class="small">${harmF(k, 'harmonizalt')}</td><td class="small">${harmF(k, 'hivatas1')}</td><td class="small">${harmF(k, 'hivatas2')}</td>
             <td class="small">${k.harm_id ? `<a href="#" data-harm="${k.harm_id}">${allapotBadge(k.harm_allapot)}</a>` : '<span class="muted">nincs</span>'}</td></tr>`; }).join('')}</tbody></table>`
         : '<div class="empty">Nincs találat.</div>';
       szemLinkek(lb);
@@ -1517,7 +1526,7 @@ async function harmLap() {
       const ids = [...new Set(data.map(r => r.szemelyid).filter(Boolean))];
       const nevek = new Map();
       if (ids.length) { const { data: n } = await q(sb.from('tbl_szemelyek').select('szemelyid,vezeteknev,keresztnev').in('szemelyid', ids)); n.forEach(x => nevek.set(x.szemelyid, `${x.vezeteknev} ${x.keresztnev}`)); }
-      const cell = (ervenyes, beirt) => ervenyes ? (ervenyes !== beirt && beirt ? `${esc(ervenyes)} <span class="muted small">(${esc(beirt)})</span>` : esc(ervenyes)) : (beirt ? `<span class="badge b-warn">${esc(beirt)}</span>` : '<span class="muted">—</span>');
+      const cell = (ervenyes, beirt) => ervenyes ? (ervenyes !== beirt && beirt ? `${esc(ervenyes)} <span class="muted small">(${beirt.trim() ? esc(beirt) : 'üres'})</span>` : esc(ervenyes)) : (beirt ? `<span class="badge b-warn" title="Döntésre vár">${esc(beirt)} ?</span>` : '<span class="muted">—</span>');
       box.innerHTML = data.length ? `<table><thead><tr><th>Név</th><th>Harmonizált</th><th>Hivatás1</th><th>Hivatás2</th><th>Állapot</th></tr></thead><tbody>${
         data.map(r => `<tr class="click" data-h="${r.harm_id}"><td>${esc(nevek.get(r.szemelyid) || '?')}</td><td>${cell(r.harmonizalt, r.harmonizalt_beirt)}</td><td>${cell(r.hivatas1, r.hivatas1_beirt)}</td><td>${cell(r.hivatas2, r.hivatas2_beirt)}</td><td>${allapotBadge(r.allapot)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Nincs találat.</div>';
       box.querySelector('tbody')?.addEventListener('click', e => {
