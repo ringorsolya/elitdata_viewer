@@ -59,7 +59,7 @@ const SZEMELYMEZO = {
   vezeteknev: 'Vezetéknév', keresztnev: 'Keresztnév', szuletesiev: 'Születési év', szuletesihely: 'Születési hely',
   szuletesiorszagkod: 'Születési ország (kód)', nemzetisegkod: 'Nemzetiség', doktoricim: 'Doktori cím', vegzettsegid: 'Végzettség (kód)',
   szerzetese: 'Szerzetes', halalev: 'Halálozás éve', halalho: 'Halálozás hónapja', halalnap: 'Halálozás napja', halalhely: 'Halálozás helye',
-  halalhelymegyekod: 'Halálozás helye (megyekód)', halalmodja: 'Halál módja (kód)', halalpontose: 'Halálozás pontos (kód)',
+  halalhelymegyekod: 'Halálozás helye (megyekód)', halalmodja: 'Halál módja (kód)', halalpontose: 'Halálozási adat pontossága',
   testverekszama: 'Testvérek száma', gyerekekszama: 'Gyerekek száma', hazassagokszama: 'Házasságok száma', elsohazassagev: 'Első házasság éve',
   hazaskor: 'Házasságkötéskori kor', csaladiallapot1928: 'Családi állapot 1928', csaladiallapot1938: 'Családi állapot 1938',
   csaladiallapot1942: 'Családi állapot 1942', anyahalalev: 'Anya halála', apahalalev: 'Apa halála', szerzetesrende: 'Szerzetesrend (kód)',
@@ -528,7 +528,7 @@ async function szemelyekLap() {
 // A kódtáblák egyszer töltődnek be; ahol nincs megbízható kódtábla, a kód „kód N” formában látszik (lásd KODKONYV_HIANY).
 async function kodtablak() {
   if (S.kt) return S.kt;
-  const [vm, kit, kk, part, szerz, zst, fr, egy, idp, osz, dipl, hmod, nemz, csall] = await Promise.all([
+  const [vm, kit, kk, part, szerz, zst, fr, egy, idp, osz, dipl, hmod, nemz, csall, vall, hpont] = await Promise.all([
     q(sb.from('kod_varmegyek').select('kodertek,kodnev')),
     q(sb.from('tbl_kod_kituntetes').select('lista,kituntetekod,kituntetenev')),
     q(sb.from('tbl_kod_kulfoldikit').select('orszag,kodertek,kituntetenev')),
@@ -543,6 +543,8 @@ async function kodtablak() {
     q(sb.from('kod_halalmodja').select('kodertek,nev').order('kodertek')),
     q(sb.from('kod_nemzetiseg').select('lista,kod,nev').order('kod')),
     q(sb.from('kod_csaladiallapot').select('kodertek,nev,statusz').order('kodertek')),
+    q(sb.from('kod_vallas').select('kodertek,nev,statusz').order('kodertek')),
+    q(sb.from('kod_halalpontossag').select('kodertek,nev,statusz').order('kodertek')),
   ]);
   const m = (rows, k, v) => new Map(rows.map(r => [Number(r[k]), r[v]]));
   S.kt = {
@@ -551,6 +553,8 @@ async function kodtablak() {
     diploma: new Map(dipl.data.map(r => [Number(r.kodertek), r])),
     halalmod: m(hmod.data, 'kodertek', 'nev'),
     csaladiallapot: new Map(csall.data.map(r => [Number(r.kodertek), r])),
+    vallas: new Map(vall.data.map(r => [Number(r.kodertek), r])),
+    halalpontossag: new Map(hpont.data.map(r => [Number(r.kodertek), r])),
     nemzetiseg: m(nemz.data.filter(r => r.lista === 1), 'kod', 'nev'),
     kitKulf: kk.data,
     kitLista: [2, 3, 4, 5].reduce((o, l) => (o[l] = m(kit.data.filter(r => r.lista === l), 'kituntetekod', 'kituntetenev'), o), {}),
@@ -565,7 +569,6 @@ async function kodtablak() {
   return S.kt;
 }
 // Vélelmezett vallás-kódok: a korábbi ElitData-profilfájl feloldása alapján, a KIG-kódkönyvvel még egyeztetendő.
-const VALLAS = { 0: 'nincs / felekezeten kívüli', 1: 'római katolikus', 2: 'református', 3: 'evangélikus', 4: 'unitárius', 5: 'görögkatolikus', 6: 'görögkatolikus', 8: 'izraelita' };
 const SZEREP = { APA: 'apa', ANYA: 'anya', HAZASTARS_1: '1. házastárs', HAZASTARS_2: '2. házastárs', HAZASTARS_3: '3. házastárs' };
 const LAKAS = { helyszin: 'Helyszín (kód)', lakcim: 'Lakcím típusa (kód)', lakasbanevek: 'Lakásban töltött évek', budapestenevek: 'Budapesten töltött évek', lakber: 'Lakbér', utcaiszobak: 'Utcai szobák', udvariszobak: 'Udvari szobák', kertiszobak: 'Kerti szobák', hall: 'Hall', cseledszoba: 'Cselédszoba', cseledfulke: 'Cselédfülke', konyha: 'Konyha', teakonyha: 'Teakonyha', eloszoba: 'Előszoba', eleskamra: 'Éléskamra', feredo: 'Fürdőszoba', veranda: 'Veranda', muterem: 'Műterem', egyebhelyiseg: 'Egyéb helyiség', garage: 'Garázs', halofulke: 'Hálófülke', pince: 'Pince', padlas: 'Padlás', alberlo: 'Albérlő', vizvezetek: 'Vízvezeték', gazvezetek: 'Gázvezeték', villany: 'Villany', kozpontifutes: 'Központi fűtés', etagefutes: 'Etázsfűtés', gazfutes: 'Gázfűtés', villanyfutes: 'Villanyfűtés', melegviz: 'Melegvíz', telefon: 'Telefon', detektorradio: 'Detektoros rádió', lamparadio: 'Lámpás rádió', fozeshelyek: 'Főzőhelyek', furdeshelyek: 'Fürdőhelyek', wcszam: 'WC', nemwcszam: 'Nem vízöblítéses WC' };
 const ZST = { zst_szul: 'Zsidónak minősült születése alapján', zst_fele: 'Felekezet alapján', zst_gyer: 'Gyermekei érintettek', zst_1in: '1. törvény: érintett', zst_1mi: '1. törvény: következmény / mentesítés', zst_1ev: '1. törvény: év', zst_1ho: '1. törvény: hónap', zst_2in: '2. törvény: érintett', zst_2mi: '2. törvény: következmény / mentesítés', zst_2ev: '2. törvény: év', zst_2ho: '2. törvény: hónap' };
@@ -581,6 +584,8 @@ function profilRender(P, id) {
   const evF = v => (v === null || v === undefined || v === '') ? null : esc(ev(v, szul));
   const boolF = v => (v === null || v === undefined || v === '') ? null : (Number(v) === 1 ? 'igen' : Number(v) === 0 ? 'nem' : kod(v));
   const txt = v => (v === null || v === undefined || v === '') ? null : esc(v);
+  // kódtáblás feloldás; a következtetett jelentés mellett (?)
+  const ktF = mp => v => { if (v === null || v === undefined || v === '') return null; const c = mp.get(Number(v)); return c ? `${esc(c.nev)}${c.statusz === 'következtetett' ? ' <span class="muted small" title="Az adatokból következtetett jelentés">(?)</span>' : ''}` : kod(v); };
   const csallF = v => { if (v === null || v === undefined || v === '') return null; const c = kt.csaladiallapot.get(Number(v)); return c ? `${esc(c.nev)}${c.statusz === 'következtetett' ? ' <span class="muted small" title="A kódkönyv hiányában az adatokból következtetett jelentés">(?)</span>' : ''}` : kod(v); };
   const fb = fid => { const f = kt.forras.get(fid); return f ? forrasBadge(f.megnevezes, f.fazis) : ''; };
   // az állítások (javítások) felülírják a megjelenített értéket, a régi érték megmarad tooltipben
@@ -623,7 +628,7 @@ function profilRender(P, id) {
     mezo('tbl_elittag_reszletek', r, 'halalhelymegyekod', 'Halálozás vármegye / ország', helyF),
     mezo('tbl_elittag_reszletek', r, 'halalmodja', 'Halál módja', v => v === null || v === undefined || v === '' ? null : (kt.halalmod.get(Number(v)) ? esc(kt.halalmod.get(Number(v))) : kod(v))),
     mezo('tbl_elittag_reszletek', r, 'halalmodjaegyeb', 'Halál módja (szövegesen)', txt),
-    mezo('tbl_elittag_reszletek', r, 'halalpontose', 'Halálozási adat pontossága', kod),
+    mezo('tbl_elittag_reszletek', r, 'halalpontose', 'Halálozási adat pontossága', ktF(kt.halalpontossag)),
   ]);
   const csaladiAllapot = kvBlokk([
     mezo('tbl_elittag_reszletek', r, 'testverekszama', 'Testvérek száma', txt),
@@ -638,8 +643,8 @@ function profilRender(P, id) {
     mezo('tbl_elittag_reszletek', r, 'anyahalalev', 'Anya halála (kategória)', kod),
   ]);
   const vallas = tabla(P.vallas, [
-    { c: 'Felekezet', f: s => s.jelenlegivallas === null ? null : `${esc(VALLAS[s.jelenlegivallas] ?? '')} ${kod(s.jelenlegivallas)}${VALLAS[s.jelenlegivallas] ? ' <span class="muted small">(vélelmezett)</span>' : ''}` },
-    { c: 'Áttérés', f: s => s.regivallas === null && s.ujvallas === null ? null : `${esc(VALLAS[s.regivallas] ?? 'kód ' + s.regivallas)} → ${esc(VALLAS[s.ujvallas] ?? 'kód ' + s.ujvallas)}` },
+    { c: 'Felekezet', f: s => ktF(kt.vallas)(s.jelenlegivallas) },
+    { c: 'Áttérés', f: s => s.regivallas === null && s.ujvallas === null ? null : `${ktF(kt.vallas)(s.regivallas) ?? '—'} → ${ktF(kt.vallas)(s.ujvallas) ?? '—'}` },
     { c: 'Áttérés éve', f: s => evF(s.vallasvaltoztataseve) },
   ]);
   const nemes = kvBlokk([
@@ -980,7 +985,7 @@ function bevitel(tip, v, szul) {
   if (tip === 'part') return opt([...kt.part.entries()]);
   if (tip === 'kithazai') return opt([...kt.kitHazai.entries()]);
   if (tip === 'diploma') return opt([...kt.diploma.values()].map(d => [d.kodertek, `${d.kodertek} – ${d.nev}`]));
-  if (tip === 'vallas') return opt(Object.entries(VALLAS).map(([k, n]) => [k, n + ' (vélelmezett)']));
+  if (tip === 'vallas') return opt([...kt.vallas.values()].map(c => [c.kodertek, c.nev + (c.statusz === 'következtetett' ? ' (?)' : '')]));
   if (tip === 'iskolatipus') return opt([['altalanos', 'alapfok'], ['kozep', 'középfok'], ['felso', 'felsőfok']]);
   if (tip === 'egyetem') return opt([...kt.egyetem.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'hu')));
   if (tip === 'idopont') return opt(kt.idopont.map(i => [i.idopontkod, i.idopontnev]));
