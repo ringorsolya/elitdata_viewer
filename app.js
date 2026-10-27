@@ -165,7 +165,7 @@ function valt(tab, render = true) {
   S.tab = tab;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   if (!render) return;
-  ({ nyitott: nyitottLap, szemelyek: szemelyekLap, harm: harmLap, szabalyok: szabalyokLap, naplo: naploLap, munkatarsak: munkatarsakLap, csoportok: csoportokLap })[tab]();
+  ({ nyitott: nyitottLap, javaslatok: javaslatokLap, szemelyek: szemelyekLap, harm: harmLap, szabalyok: szabalyokLap, naplo: naploLap, munkatarsak: munkatarsakLap, csoportok: csoportokLap })[tab]();
 }
 
 // ---------- Nyitott kérdések ----------
@@ -1540,6 +1540,84 @@ async function harmLap() {
   $('#h-a').addEventListener('change', e => { st.allapot = e.target.value; st.page = 0; lista(); });
   $('#h-f').addEventListener('change', e => { st.forras = e.target.value; st.page = 0; lista(); });
   $('#h-q').addEventListener('input', debounce(e => { st.kereses = tiszta(e.target.value); st.page = 0; lista(); }));
+  lista();
+}
+
+
+// ---------- Javaslatok (külső forrásból, jóváhagyásra) ----------
+const JTABLA = { tbl_szemelyek: 'Alapadatok', tbl_elittag_reszletek: 'Életrajzi részletek', tbl_tanulmanyok: 'Tanulmányok', tbl_karrier: 'Karrier',
+  tbl_kituntetes_hazai: 'Kitüntetések', tbl_kituntetes_kulfoldi: 'Kitüntetések (1945 után / külföldi)', tbl_dijak: 'Díjak', tbl_csapat_ermek: 'Címek',
+  tbl_szervezeti_tagsag_belfold: 'Szervezeti tagság', tbl_kulfolditartozkodasok: 'Külföldi tartózkodás', tbl_foglalkozasok: 'Foglalkozás' };
+const JMUV = { javit: '<span class="badge b-warn">javítás</span>', uj: '<span class="badge b-info">új adat</span>', megerosit: '<span class="badge b-ok">megerősítés</span>' };
+async function javaslatokLap() {
+  location.hash = '';
+  app.innerHTML = `<h2>Javaslatok</h2>
+    <p class="muted">Külső forrásból (pl. Magyar Színházművészeti Lexikon) gyűjtött adatok. Jóváhagyásig semmi sem kerül az adatbázisba; jóváhagyáskor az eredeti adat megmarad, az új érték forrással és hivatkozással rögzül, és visszavonható.</p>
+    <div class="toolbar"><input type="search" id="jv-q" placeholder="Név…"><select id="jv-a"><option value="nyitott">Van nyitott javaslat</option><option value="">Mind</option></select></div>
+    <div class="grid2"><div><div class="tbl-wrap" id="jv-list"></div></div><div class="sticky" id="jv-detail"><div class="card empty">Válassz egy személyt.</div></div></div>`;
+  const st = { kereses: '', allapot: 'nyitott', kivalasztott: null };
+  const lista = async () => {
+    const box = $('#jv-list'); box.innerHTML = '<div class="empty">Betöltés…</div>';
+    let qq = sb.from('v_javaslat_szemelyek').select('*');
+    if (st.allapot === 'nyitott') qq = qq.gt('nyitott', 0);
+    if (st.kereses) qq = qq.ilike('nev', `%${st.kereses}%`);
+    try {
+      const { data } = await q(qq.order('nev').limit(500));
+      box.innerHTML = data.length ? `<table><thead><tr><th>Név</th><th>Nyitott</th><th>Javítás / új / megerősítés</th><th>Kész</th></tr></thead><tbody>${
+        data.map(r => `<tr class="click ${st.kivalasztott === r.szemelyid ? 'sel' : ''}" data-id="${r.szemelyid}"><td><b>${esc(r.nev)}</b> <span class="muted small">${esc(ev(r.szuletesiev))}</span></td>
+          <td>${r.nyitott ? `<span class="badge b-warn">${r.nyitott}</span>` : ''}</td><td class="small">${r.javitas} / ${r.uj_sor} / ${r.megerosites}</td>
+          <td class="small">${r.elfogadva ? `<span class="badge b-ok">${r.elfogadva} elfogadva</span>` : ''} ${r.elutasitva ? `<span class="badge b-gray">${r.elutasitva} elutasítva</span>` : ''}</td></tr>`).join('')}</tbody></table>`
+        : '<div class="empty">Nincs javaslat.</div>';
+      box.querySelector('tbody')?.addEventListener('click', e => {
+        const tr = e.target.closest('tr'); if (!tr) return;
+        box.querySelectorAll('tr').forEach(x => x.classList.remove('sel')); tr.classList.add('sel');
+        st.kivalasztott = Number(tr.dataset.id); reszlet(st.kivalasztott);
+      });
+    } catch (e) { hibaKiir(box, e); }
+  };
+  const reszlet = async (id, uzenet) => {
+    const d = $('#jv-detail'); d.innerHTML = '<div class="card empty">Betöltés…</div>';
+    try {
+      const { data } = await q(sb.from('tbl_javaslatok').select('*').eq('szemelyid', id).order('tabla').order('javaslat_id'));
+      const kt = await kodtablak();
+      const ny = data.filter(j => j.allapot === 'javaslat'), kesz = data.filter(j => j.allapot !== 'javaslat');
+      const csop = new Map(); for (const j of ny) { const k = JTABLA[j.tabla] || j.tabla; if (!csop.has(k)) csop.set(k, []); csop.get(k).push(j); }
+      const sor = j => `<div class="jv-sor">
+          ${S.donto ? `<input type="checkbox" class="jv-cb" value="${j.javaslat_id}" checked>` : ''}
+          <div class="jv-tart"><div>${JMUV[j.muvelet] || ''} ${esc(j.olvashato)}</div>
+            ${j.muvelet === 'javit' ? `<div class="small"><span class="muted">jelenleg:</span> ${dash(j.jelenlegi)} → <b>${esc(j.javasolt ?? '')}</b></div>` : ''}
+            ${j.idezet ? `<details class="small"><summary class="muted">idézet a forrásból</summary><blockquote>${esc(j.idezet)}</blockquote></details>` : ''}
+            <div class="small muted">${forrasBadge(kt.forras.get(j.forras_id)?.megnevezes, kt.forras.get(j.forras_id)?.fazis)} ${esc(kt.forras.get(j.forras_id)?.megnevezes || '')}${j.hivatkozas ? ` · <a href="${esc(j.hivatkozas)}" target="_blank" rel="noopener">szócikk</a>` : ''}${j.megjegyzes ? ' · ' + esc(j.megjegyzes) : ''}</div>
+          </div></div>`;
+      const nev = (await q(sb.from('tbl_szemelyek').select('vezeteknev,keresztnev').eq('szemelyid', id).single())).data;
+      d.innerHTML = `<div class="card">
+        ${uzenet ? `<div class="msg ok small" style="margin-bottom:10px">${uzenet}</div>` : ''}
+        <h3 style="margin-top:0"><a href="#szemely=${id}" data-szem="${id}">${esc(nev.vezeteknev)} ${esc(nev.keresztnev)}</a></h3>
+        ${ny.length ? [...csop.entries()].map(([k, js]) => `<h4>${esc(k)}</h4>${js.map(sor).join('')}`).join('') : '<p class="muted">Nincs nyitott javaslat.</p>'}
+        ${ny.length && S.donto ? `<label>Megjegyzés (nem kötelező)<input id="jv-m" placeholder="pl. a lexikon szerint"></label>
+          <div class="toolbar"><button class="btn primary" id="jv-el">Kijelöltek elfogadása</button><button class="btn" id="jv-ut">Kijelöltek elutasítása</button>
+          <button class="btn small" id="jv-mind">Mind / egyik sem</button></div><div id="jv-msg"></div>` : ''}
+        ${kesz.length ? `<details style="margin-top:12px"><summary class="muted">Korábban eldöntött javaslatok (${kesz.length})</summary>${kesz.map(j => `<div class="small" style="margin:4px 0">${j.allapot === 'elfogadva' ? '<span class="badge b-ok">elfogadva</span>' : '<span class="badge b-gray">elutasítva</span>'} ${esc(j.olvashato)}${j.muvelet === 'javit' ? ` → <b>${esc(j.javasolt ?? '')}</b>` : ''}</div>`).join('')}</details>` : ''}
+      </div>`;
+      szemLinkek(d);
+      if (!S.donto || !ny.length) return;
+      $('#jv-mind', d).addEventListener('click', () => { const cbs = [...d.querySelectorAll('.jv-cb')]; const all = cbs.every(c => c.checked); cbs.forEach(c => { c.checked = !all; }); });
+      const dont = async elfogad => {
+        const ids = [...d.querySelectorAll('.jv-cb:checked')].map(c => Number(c.value));
+        if (!ids.length) return msg($('#jv-msg', d), 'Nincs kijelölt javaslat.', 'err');
+        d.querySelectorAll('button').forEach(b => { b.disabled = true; });
+        try {
+          const { data: n } = await q(sb.rpc('javaslat_dont', { p_ids: ids, p_elfogad: elfogad, p_megjegyzes: $('#jv-m', d).value || null }));
+          await reszlet(id, `${n} javaslat ${elfogad ? 'elfogadva – az adatlapon már az új értékek látszanak' : 'elutasítva'}.`);
+          lista();
+        } catch (e) { d.querySelectorAll('button').forEach(b => { b.disabled = false; }); hibaKiir($('#jv-msg', d), e); }
+      };
+      $('#jv-el', d).addEventListener('click', () => dont(true));
+      $('#jv-ut', d).addEventListener('click', () => dont(false));
+    } catch (e) { hibaKiir(d, e); }
+  };
+  $('#jv-q').addEventListener('input', debounce(e => { st.kereses = tiszta(e.target.value); lista(); }));
+  $('#jv-a').addEventListener('change', e => { st.allapot = e.target.value; lista(); });
   lista();
 }
 
