@@ -523,7 +523,7 @@ async function szemelyekLap() {
 // A kódtáblák egyszer töltődnek be; ahol nincs megbízható kódtábla, a kód „kód N” formában látszik (lásd KODKONYV_HIANY).
 async function kodtablak() {
   if (S.kt) return S.kt;
-  const [vm, kit, kk, part, szerz, zst, fr, egy, idp, osz] = await Promise.all([
+  const [vm, kit, kk, part, szerz, zst, fr, egy, idp, osz, dipl] = await Promise.all([
     q(sb.from('kod_varmegyek').select('kodertek,kodnev')),
     q(sb.from('tbl_kod_kituntetes').select('lista,kituntetekod,kituntetenev')),
     q(sb.from('tbl_kod_kulfoldikit').select('orszag,kodertek,kituntetenev')),
@@ -534,11 +534,13 @@ async function kodtablak() {
     q(sb.from('tbl_egyetemek').select('egyetemid,egyetemnev,egyetemnevharmonizalt').range(0, 4999)),
     q(sb.from('tbl_foglalkozas_idopont').select('idopontkod,idopontnev,sorrend').order('sorrend')),
     q(sb.from('v_szerk_oszlopok').select('*').order('sorrend').range(0, 4999)),
+    q(sb.from('kod_diplomafajta').select('kodertek,nev,statusz').order('kodertek')),
   ]);
   const m = (rows, k, v) => new Map(rows.map(r => [Number(r[k]), r[v]]));
   S.kt = {
     hely: m(vm.data, 'kodertek', 'kodnev'),
     kitHazai: m(kit.data.filter(r => r.lista === 1), 'kituntetekod', 'kituntetenev'),
+    diploma: new Map(dipl.data.map(r => [Number(r.kodertek), r])),
     kitKulf: kk.data,
     kitLista: [2, 3, 4, 5].reduce((o, l) => (o[l] = m(kit.data.filter(r => r.lista === l), 'kituntetekod', 'kituntetenev'), o), {}),
     part: m(part.data, 'partkod', 'partnev'),
@@ -634,7 +636,7 @@ function profilRender(P, id) {
     { c: 'Évek', f: s => (s.kezdoev === null && s.befejezesev === null) ? null : idoszak(s.kezdoev, s.befejezesev, szul) },
     { c: 'Szak', k: 'szak' },
     { c: 'Diploma éve', f: s => evF(s.diplomaev) },
-    { c: 'Diploma fajtája', f: s => kod(s.diplomafajta) },
+    { c: 'Diploma fajtája', f: s => { const d = kt.diploma.get(Number(s.diplomafajta)); return d ? `${esc(d.nev)}${d.statusz === 'következtetett' ? ' <span class="muted small" title="A kódkönyvben nem szerepel; az adatokból következtetett jelentés">(?)</span>' : ''}` : kod(s.diplomafajta); } },
     { c: 'Tanítási nyelv', f: s => kod(s.tanitasinyelv) },
     { c: 'Végzettség', f: s => kod(s['vegzettségkod']) },
   ]);
@@ -897,6 +899,7 @@ function mezoTipus(tabla, m) {
   if (m === 'partkod') return 'part';
   if (['jelenlegivallas', 'regivallas', 'ujvallas'].includes(m)) return 'vallas';
   if (tabla === 'tbl_kituntetes_hazai' && m === 'kituntetekod') return 'kithazai';
+  if (tabla === 'tbl_tanulmanyok' && m === 'diplomafajta') return 'diploma';
   if (m === 'iskolatipus') return 'iskolatipus';
   if (m === 'egyetemid') return 'egyetem';
   if (m === 'idopontkod') return 'idopont';
@@ -956,6 +959,7 @@ function bevitel(tip, v, szul) {
   if (tip === 'hely') return opt([...kt.hely.entries()].sort((a, b) => a[1].localeCompare(b[1], 'hu')));
   if (tip === 'part') return opt([...kt.part.entries()]);
   if (tip === 'kithazai') return opt([...kt.kitHazai.entries()]);
+  if (tip === 'diploma') return opt([...kt.diploma.values()].map(d => [d.kodertek, `${d.kodertek} – ${d.nev}`]));
   if (tip === 'vallas') return opt(Object.entries(VALLAS).map(([k, n]) => [k, n + ' (vélelmezett)']));
   if (tip === 'iskolatipus') return opt([['altalanos', 'alapfok'], ['kozep', 'középfok'], ['felso', 'felsőfok']]);
   if (tip === 'egyetem') return opt([...kt.egyetem.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'hu')));
