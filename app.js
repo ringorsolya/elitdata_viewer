@@ -577,7 +577,7 @@ function profilRender(P, id) {
   const ertek = (tabla, mezo, sor) => { const a = allit[tabla + '.' + mezo]; return a ? { v: a.ertek, forras: a.forras_id, javitva: sor ? sor[mezo] : null } : { v: sor ? sor[mezo] : null, forras: sor ? sor.forras_id : null }; };
   const kvSor = (cim, html, forras) => html === null || html === undefined ? '' : `<div>${esc(cim)}</div><div>${html} ${forras ? fb(forras) : ''}</div>`;
   const kvBlokk = (sorok) => { const h = sorok.join(''); return h ? `<div class="kv">${h}</div>` : '<p class="muted">Nincs adat.</p>'; };
-  const mezo = (tabla, sor, m, cim, f) => { const e = ertek(tabla, m, sor); const h = f(e.v); return kvSor(cim, h === null ? null : h + (e.javitva !== undefined && allit[tabla + '.' + m] ? ` <span class="muted small" title="Eredeti érték">(eredetileg: ${esc(e.javitva ?? '—')})</span>` : ''), e.forras); };
+  const mezo = (tabla, sor, m, cim, f) => { const e = ertek(tabla, m, sor); const h = f(e.v); return kvSor(cim, h === null ? null : (e.javitva !== undefined && allit[tabla + '.' + m] ? `<span title="Javított érték; eredetileg: ${esc(e.javitva ?? '—')}">${h}</span>` : h), e.forras); };
   // táblázat: csak a kitöltött oszlopok
   const tabla = (sorok, oszlopok) => {
     if (!sorok || !sorok.length) return '<p class="muted">Nincs adat.</p>';
@@ -601,7 +601,12 @@ function profilRender(P, id) {
     mezo('tbl_elittag_reszletek', r, 'szerzeteskilepesev', 'Rendből kilépés éve', evF),
   ]);
   const halal = kvBlokk([
-    kvSor('Halálozás ideje', [ertek('tbl_elittag_reszletek', 'halalev', r).v ? ev(ertek('tbl_elittag_reszletek', 'halalev', r).v, szul) : null, r.halalho, r.halalnap].filter(x => x !== null && x !== undefined && x !== '').map(esc).join('. ') || null, r.forras_id),
+    (() => { const he = ertek('tbl_elittag_reszletek', 'halalev', r), hh = ertek('tbl_elittag_reszletek', 'halalho', r), hn = ertek('tbl_elittag_reszletek', 'halalnap', r);
+      const HO = ['jan.', 'febr.', 'márc.', 'ápr.', 'máj.', 'jún.', 'júl.', 'aug.', 'szept.', 'okt.', 'nov.', 'dec.'];
+      const sz = [he.v ? ev(he.v, szul) + '.' : null, hh.v ? (HO[Number(hh.v) - 1] || hh.v + '.') : null, hn.v ? hn.v + '.' : null].filter(Boolean).join(' ');
+      const jav = [he, hh, hn].find(x => x.javitva !== undefined);
+      const eredeti = [r.halalev ? ev(r.halalev, szul) : null, r.halalho, r.halalnap].filter(x => x !== null && x !== undefined && x !== '').join('. ');
+      return kvSor('Halálozás ideje', sz ? (jav ? `<span title="Javított érték; eredetileg: ${esc(eredeti || '—')}">${esc(sz)}</span>` : esc(sz)) : null, (jav || he).forras || r.forras_id); })(),
     mezo('tbl_elittag_reszletek', r, 'halalhely', 'Halálozás helye', txt),
     mezo('tbl_elittag_reszletek', r, 'halalhelymegyekod', 'Halálozás vármegye / ország', helyF),
     mezo('tbl_elittag_reszletek', r, 'halalmodja', 'Halál módja', kod),
@@ -641,7 +646,7 @@ function profilRender(P, id) {
     { c: 'Végzettség', f: s => kod(s['vegzettségkod']) },
   ]);
   const karrier = P.karrier && P.karrier.length ? `<div class="tbl-wrap"><table id="kar-tbl"><thead><tr><th>Időszak</th><th>Foglalkozás</th><th>Munkahely</th><th>Helyszín</th><th>Forrás</th><th>Harmonizált</th><th>Hivatás1</th><th>Hivatás2</th><th>Specifikáció</th><th>Harm. forrás</th><th>Állapot</th>${S.szerkEz ? '<th></th>' : ''}</tr></thead><tbody>${
-    P.karrier.map(k => { const jm = k.javitott_mezok || [], jv = m => jm.includes(m) ? ` <span class="badge b-info" title="Javított érték; eredetileg: ${esc(k.eredeti?.[m] ?? '—')}">javítva</span>` : '';
+    P.karrier.map(k => { const jm = k.javitott_mezok || [], jv = m => jm.includes(m) ? ` <span class="muted small" title="Javított érték; eredetileg: ${esc(k.eredeti?.[m] ?? '—')}">*</span>` : '';
       const evJav = jm.includes('elsoev') || jm.includes('utolsoev');
       return `<tr ${k.harm_id ? `class="click" data-h="${k.harm_id}"` : ''}><td>${idoszak(k.elsoev, k.utolsoev)}${evJav ? jv(jm.includes('elsoev') ? 'elsoev' : 'utolsoev') : (k.leiras && k.leiras.startsWith('? kód') ? ` <span class="badge b-warn">${esc(k.leiras)}</span>` : '')}</td>
       <td>${dash(k.foglalkozas)}${jv('foglalkozas')}</td><td class="small">${dash(k.munkahely)}${jv('munkahely')}</td><td class="small">${dash(k.helyszin)}${jv('helyszin')}</td><td>${forrasBadge(k.forras, k.fazis)}</td>
@@ -766,10 +771,10 @@ function javitasLista(P, fb) {
   const a = (P.allitasok || []);
   if (!a.length) return '';
   const nev = Object.fromEntries(JAVITHATO.map(j => [j[0] + '.' + j[1], j[2]]));
-  return `<h4>Javítások</h4><div class="tbl-wrap"><table><thead><tr><th>Mező</th><th>Új érték</th><th>Forrás</th><th>Hivatkozás</th><th>Ki, mikor</th><th></th></tr></thead><tbody>${
+  return `<details class="jav-elozmeny"><summary class="muted small">Javítások előzménye (${a.length})</summary><div class="tbl-wrap"><table><thead><tr><th>Mező</th><th>Új érték</th><th>Forrás</th><th>Hivatkozás</th><th>Ki, mikor</th><th></th></tr></thead><tbody>${
     a.slice().reverse().map(x => `<tr class="${x.elfogadott === false ? 'visszavont' : ''}"><td>${esc(nev[x.tabla + '.' + x.mezo] || x.mezo)}</td><td>${dash(x.ertek)}</td><td>${fb(x.forras_id)} ${esc((S.kt.forras.get(x.forras_id) || {}).megnevezes || '')}</td>
       <td class="small">${dash(x.hivatkozas)}${x.megjegyzes ? `<br><span class="muted">${esc(x.megjegyzes)}</span>` : ''}</td><td class="small">${esc(x.rogzitette || '')}<br>${new Date(x.rogzitve).toLocaleString('hu-HU')}</td>
-      <td>${x.elfogadott === false ? '<span class="badge b-gray">visszavonva</span>' : (S.szerkEz ? `<button class="btn small" data-visszavon="${x.allitas_id}">Visszavonás</button>` : '')}</td></tr>`).join('')}</tbody></table></div>`;
+      <td>${x.elfogadott === false ? '<span class="badge b-gray">visszavonva</span>' : (S.szerkEz ? `<button class="btn small" data-visszavon="${x.allitas_id}">Visszavonás</button>` : '')}</td></tr>`).join('')}</tbody></table></div></details>`;
 }
 function forrasValaszto(prefix) {
   const fr = [...S.kt.forras.values()].filter(f => f.fazis !== 'KIG-féle kutatás' && !/^(harmonizációs|kódlista|kódolói|származtatott)/.test(f.tipus || ''))
@@ -949,7 +954,7 @@ function sorJavitasokAlkalmaz(P) {
 }
 function javJel(s) {
   if (!s || !s._jav || !s._jav.length) return '';
-  return ` <span class="badge b-info" title="${esc('Javítva: ' + s._jav.map(m => `${cimke(m)} (eredetileg: ${s._eredeti?.[m] ?? '—'})`).join('; '))}">javítva</span>`;
+  return ` <span class="muted small" title="${esc('Javítva: ' + s._jav.map(m => `${cimke(m)} (eredetileg: ${s._eredeti?.[m] ?? '—'})`).join('; '))}">*</span>`;
 }
 
 // egy mező beviteli eleme
@@ -1207,6 +1212,7 @@ async function karrierSzerk(karrierid, d, utana) {
         ${jel.some(j => j[3]) ? '<p class="small muted" style="margin:4px 0 0">A kódban a második év kisebb az elsőnél, ez valószínűleg rögzítési hiba. A ⇄ jelű javaslat a két év felcserélésével készült. Csak akkor válaszd, ha a forrás alátámasztja, és a Megjegyzésben jelezd.</p>' : ''}
         ${!jel.some(j => j[2]) ? '<p class="small muted" style="margin:4px 0 0">Egyik feloldás sem illik a születési évhez: valószínűleg elírás van a forrásban. Nézd meg a forrást, és írd be kézzel a helyes éveket.</p>' : ''}</div>` : ''}
       <div class="szerk-racs">${KMEZO.map(([m, cim, tip]) => `<label data-m="${m}" data-tip="${tip}" data-eredeti="${esc(ertek(m))}">${cim}<input id="kf-${m}" value="${esc(ertek(m))}" ${tip === 'ev' ? 'inputmode="numeric" placeholder="éééé"' : ''}></label>`).join('')}</div>
+      <label class="torles"><input type="checkbox" id="kf-torol"> A karrierállomás törlése (téves vagy kettős sor) – a sor nem vész el, csak érvénytelennek jelöljük, és visszavonható</label>
       ${forrasValaszto('kf')}
       <div class="toolbar"><button class="btn primary" type="submit">Mentés</button></div><div id="kf-msg"></div>
       <p class="muted small">A javítás új bejegyzésként kerül be; az eredeti sor és a harmonizációs besorolása változatlan marad.</p></form>`
@@ -1227,9 +1233,10 @@ async function karrierSzerk(karrierid, d, utana) {
   $('#kf-fs').addEventListener('change', e => $('#kf-uj').classList.toggle('hidden', e.target.value !== 'uj'));
   $('#kf-f').addEventListener('submit', async e => {
     e.preventDefault();
-    const btn = e.target.querySelector('button[type=submit]'), valt = {};
+    const btn = e.target.querySelector('button[type=submit]'); let valt = {};
     try {
-      d.querySelectorAll('label[data-m]').forEach(l => {
+      if ($('#kf-torol')?.checked) valt = { _torles: '1' };
+      else d.querySelectorAll('label[data-m]').forEach(l => {
         const uj = l.querySelector('input').value.trim();
         if (uj !== l.dataset.eredeti) {
           if (l.dataset.tip === 'ev' && uj && !/^\d{4}$/.test(uj)) throw new Error(`${l.firstChild.textContent}: négyjegyű évszámot adj meg.`);
@@ -1237,7 +1244,7 @@ async function karrierSzerk(karrierid, d, utana) {
         }
       });
       // évkódnál a változatlanul hagyott évet is rögzítjük, így a kérdés lezárul
-      if (evkod && (valt.elsoev !== undefined || valt.utolsoev !== undefined)) {
+      if (!valt._torles && evkod && (valt.elsoev !== undefined || valt.utolsoev !== undefined)) {
         for (const m of ['elsoev', 'utolsoev']) if (valt[m] === undefined && $('#kf-' + m).value.trim()) valt[m] = $('#kf-' + m).value.trim();
       }
       if (!Object.keys(valt).length) { msg($('#kf-msg'), 'Nem változott semmi.', 'info'); return; }
