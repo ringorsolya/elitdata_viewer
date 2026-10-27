@@ -1611,7 +1611,9 @@ async function javaslatokLap() {
     ]);
     const sj = new Set((sajat || []).map(r => r.csoport_id));
     $('#jv-g').innerHTML = '<option value="">Minden csoport</option>' + cs.map(c => `<option value="${c.csoport_id}">${esc(c.nev)}${sj.has(c.csoport_id) ? ' – saját' : ''}</option>`).join('');
-    if (sj.size === 1) { st.csoport = String([...sj][0]); $('#jv-g').value = st.csoport; }
+    let mentett = ''; try { mentett = localStorage.getItem('jv-csoport') || ''; } catch (e) { /* nincs tárolás */ }
+    if (sj.size === 1 && !mentett) st.csoport = String([...sj][0]); else if (cs.some(c => String(c.csoport_id) === mentett)) st.csoport = mentett;
+    $('#jv-g').value = st.csoport;
   } catch (e) { /* a csoportlista nélkül is működik */ }
   const lista = async () => {
     const box = $('#jv-list'); box.innerHTML = '<div class="empty">Betöltés…</div>';
@@ -1678,7 +1680,7 @@ async function javaslatokLap() {
   };
   $('#jv-q').addEventListener('input', debounce(e => { st.kereses = tiszta(e.target.value); lista(); }));
   $('#jv-a').addEventListener('change', e => { st.allapot = e.target.value; lista(); });
-  $('#jv-g').addEventListener('change', e => { st.csoport = e.target.value; lista(); });
+  $('#jv-g').addEventListener('change', e => { st.csoport = e.target.value; try { localStorage.setItem('jv-csoport', st.csoport); } catch (e2) { /* nincs tárolás */ } lista(); });
   $('#jv-cs').addEventListener('change', e => { st.csomag = e.target.value; lista(); });
   lista();
 }
