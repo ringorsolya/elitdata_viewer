@@ -295,7 +295,7 @@ async function szabalyReszlet(id, d, utana, uzenet) {
       ${s.dontotte ? `<div>Döntött</div><div>${esc(s.dontotte)}, ${new Date(s.dontes_ideje).toLocaleString('hu-HU')}</div>` : ''}
       ${s.megjegyzes ? `<div>Megjegyzés</div><div>${esc(s.megjegyzes)}</div>` : ''}
     </div>
-    ${S.donto ? `<form class="form" id="szf">
+    ${true ? `<form class="form" id="szf">
       <div class="opts">
         <label><input type="radio" name="mod" value="lista" checked> <span>Felvesszük a(z) <b>${esc(MEZONEV[lista])}</b> listára ebben az alakban</span></label>
         <label><input type="radio" name="mod" value="elir"> <span><b>Elírás</b> – javítjuk a helyes alakra (ugyanebben a mezőben)</span></label>
@@ -333,7 +333,7 @@ async function szabalyReszlet(id, d, utana, uzenet) {
     ${count > 300 ? '<p class="muted small">Az első 300 sor látszik.</p>' : ''}
   </div>`;
   szemLinkek(d);
-  if (!S.donto) return;
+  if (!$('#szf', d)) return;
   const f = $('#szf', d);
   const dl = () => { $('#dl-wrap', d).innerHTML = datalist('dl-cel', k[$('#celo', d).value] || []); };
   dl(); $('#celo', d).addEventListener('change', dl);
@@ -392,7 +392,7 @@ async function harmReszlet(harmId, d, utana) {
   ]);
   const { data: f } = await q(sb.from('tbl_forrasok').select('megnevezes,fazis').eq('forras_id', h.forras_id).single());
   const k = await kodok();
-  const szerk = await szerkHet(h.szemelyid);
+  const szerk = true; // a harmonizációt minden munkatárs szerkesztheti
   const sor = m => `<tr><td>${MEZONEV[m]}</td><td>${dash(h[m + '_beirt'])}</td><td><b>${dash(v[m])}</b></td><td>${dash(h[m + '_egyedi'])}</td></tr>`;
   d.innerHTML = `<div class="card">
     <h3 style="margin-top:0">${h.szemelyid ? `<a href="#szemely=${h.szemelyid}" data-szem="${h.szemelyid}">${esc(h.fajl_nev)}</a>` : esc(h.fajl_nev)}</h3>
@@ -433,7 +433,7 @@ async function ellenorzendoReszlet(id, d, utana) {
   const { data: e } = await q(sb.from('tbl_ellenorzendo').select('*').eq('ellenorzes_id', id).single());
   let nev = '';
   if (e.szemelyid) { const { data: s } = await q(sb.from('tbl_szemelyek').select('vezeteknev,keresztnev').eq('szemelyid', e.szemelyid).single()); nev = `${s.vezeteknev} ${s.keresztnev}`; }
-  const szerk = await szerkHet(e.szemelyid);
+  const szerk = true; // a nyitott kérdéseket minden munkatárs lezárhatja
   d.innerHTML = `<div class="card"><h3 style="margin-top:0">${esc(e.tipus)}</h3>
     <div class="kv small">
       ${e.szemelyid ? `<div>Személy</div><div><a href="#szemely=${e.szemelyid}" data-szem="${e.szemelyid}">${esc(nev)}</a> <span class="muted">(${e.szemelyid})</span></div>` : ''}
@@ -1644,7 +1644,7 @@ async function javaslatokLap() {
       const ny = data.filter(j => j.allapot === 'javaslat'), kesz = data.filter(j => j.allapot !== 'javaslat');
       const csop = new Map(); for (const j of ny) { const k = JTABLA[j.tabla] || j.tabla; if (!csop.has(k)) csop.set(k, []); csop.get(k).push(j); }
       const sor = j => `<div class="jv-sor">
-          ${S.donto ? `<input type="checkbox" class="jv-cb" value="${j.javaslat_id}" checked>` : ''}
+          ${dontHet ? `<input type="checkbox" class="jv-cb" value="${j.javaslat_id}" checked>` : ''}
           <div class="jv-tart"><div>${JMUV[j.muvelet] || ''} ${esc(j.olvashato)}</div>
             ${j.muvelet === 'javit' ? `<div class="small"><span class="muted">jelenleg:</span> ${dash(jvErtek(j, j.jelenlegi))} → <b>${esc(jvErtek(j, j.javasolt) ?? '')}</b></div>` : ''}
             ${j.muvelet === 'uj' && j.ertekek ? `<div class="small muted">${esc(Object.entries(j.ertekek).filter(([, v]) => v !== null && v !== '').map(([k, v]) => `${cimke(k)}: ${jvErtek({ mezo: k }, v)}`).join(' · '))}</div>` : ''}
@@ -1652,17 +1652,19 @@ async function javaslatokLap() {
             <div class="small muted">${forrasBadge(kt.forras.get(j.forras_id)?.megnevezes, kt.forras.get(j.forras_id)?.fazis)} ${esc(kt.forras.get(j.forras_id)?.megnevezes || '')}${j.hivatkozas ? ` · <a href="${esc(j.hivatkozas)}" target="_blank" rel="noopener">szócikk</a>` : ''}${j.megjegyzes ? ` · <span class="${/ellenőrizendő|ellentmond/i.test(j.megjegyzes) ? 'badge b-warn' : ''}">${esc(j.megjegyzes)}</span>` : ''}</div>
           </div></div>`;
       const nev = (await q(sb.from('tbl_szemelyek').select('vezeteknev,keresztnev').eq('szemelyid', id).single())).data;
+      const dontHet = await szerkHet(id);
       d.innerHTML = `<div class="card">
         ${uzenet ? `<div class="msg ok small" style="margin-bottom:10px">${uzenet}</div>` : ''}
         <h3 style="margin-top:0"><a href="#szemely=${id}" data-szem="${id}">${esc(nev.vezeteknev)} ${esc(nev.keresztnev)}</a></h3>
         ${ny.length ? [...csop.entries()].map(([k, js]) => `<h4>${esc(k)}</h4>${js.map(sor).join('')}`).join('') : '<p class="muted">Nincs nyitott javaslat.</p>'}
-        ${ny.length && S.donto ? `<label>Megjegyzés (nem kötelező)<input id="jv-m" placeholder="pl. a lexikon szerint"></label>
+        ${ny.length && !dontHet ? '<p class="msg info small">Ez a személy nem a te csoportodba tartozik, ezért a javaslatairól nem dönthetsz (látni láthatod őket).</p>' : ''}
+        ${ny.length && dontHet ? `<label>Megjegyzés (nem kötelező)<input id="jv-m" placeholder="pl. a lexikon szerint"></label>
           <div class="toolbar"><button class="btn primary" id="jv-el">Kijelöltek elfogadása</button><button class="btn" id="jv-ut">Kijelöltek elutasítása</button>
           <button class="btn small" id="jv-mind">Mind / egyik sem</button></div><div id="jv-msg"></div>` : ''}
         ${kesz.length ? `<details style="margin-top:12px"><summary class="muted">Korábban eldöntött javaslatok (${kesz.length})</summary>${kesz.map(j => `<div class="small" style="margin:4px 0">${j.allapot === 'elfogadva' ? '<span class="badge b-ok">elfogadva</span>' : '<span class="badge b-gray">elutasítva</span>'} ${esc(j.olvashato)}${j.muvelet === 'javit' ? ` → <b>${esc(j.javasolt ?? '')}</b>` : ''}</div>`).join('')}</details>` : ''}
       </div>`;
       szemLinkek(d);
-      if (!S.donto || !ny.length) return;
+      if (!dontHet || !ny.length) return;
       $('#jv-mind', d).addEventListener('click', () => { const cbs = [...d.querySelectorAll('.jv-cb')]; const all = cbs.every(c => c.checked); cbs.forEach(c => { c.checked = !all; }); });
       const dont = async elfogad => {
         const ids = [...d.querySelectorAll('.jv-cb:checked')].map(c => Number(c.value));
