@@ -1617,7 +1617,7 @@ async function javaslatokLap() {
   location.hash = '';
   app.innerHTML = `<h2>Javaslatok</h2>
     <p class="muted">Külső forrásból (pl. Magyar Színházművészeti Lexikon) gyűjtött adatok. Jóváhagyásig semmi sem kerül az adatbázisba; jóváhagyáskor az eredeti adat megmarad, az új érték forrással és hivatkozással rögzül, és visszavonható.</p>
-    <div class="toolbar"><input type="search" id="jv-q" placeholder="Név…"><select id="jv-a"><option value="nyitott">Van nyitott javaslat</option><option value="">Mind</option></select><select id="jv-g"><option value="">Minden csoport</option></select><select id="jv-cs"><option value="">Minden csomag</option><option>Lexikon-összevetés 2026-10 (művészek)</option><option>Arcanum-lexikonok 2026-10 (művészek, MEK-ben nem szereplők)</option></select></div>
+    <div class="toolbar"><input type="search" id="jv-q" placeholder="Név…"><select id="jv-a"><option value="nyitott">Van nyitott javaslat</option><option value="">Mind</option></select><select id="jv-g"><option value="">Minden csoport</option></select><select id="jv-cs"><option value="">Minden csomag</option><option>Lexikon-összevetés 2026-10 (művészek)</option><option>Arcanum-lexikonok 2026-10 (művészek, MEK-ben nem szereplők)</option><option>Újságírók – próbaminta 2026-10 (MÉL, Arcanum, Hungaricana)</option></select></div>
     <div class="grid2"><div><div class="tbl-wrap" id="jv-list"></div></div><div class="sticky" id="jv-detail"><div class="card empty">Válassz egy személyt.</div></div></div>`;
   const st = { kereses: '', allapot: 'nyitott', csomag: '', csoport: '', kivalasztott: null };
   try {
