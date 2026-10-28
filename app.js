@@ -816,7 +816,24 @@ function javitasLista(P, fb) {
       <td class="small">${dash(x.hivatkozas)}${x.megjegyzes ? `<br><span class="muted">${esc(x.megjegyzes)}</span>` : ''}</td><td class="small">${esc(x.rogzitette || '')}<br>${new Date(x.rogzitve).toLocaleString('hu-HU')}</td>
       <td>${x.elfogadott === false ? '<span class="badge b-gray">visszavonva</span>' : (S.szerkEz ? `<button class="btn small" data-visszavon="${x.allitas_id}">Visszavonás</button>` : '')}</td></tr>`).join('')}</tbody></table></div></details>`;
 }
+// az utoljára használt forrás megjegyzése (böngészőfülenként): ugyanannál a személynél a hivatkozás is előtöltődik
+function aktSzemelyHash() { const m = location.hash.match(/szemely=(\d+)/); return m ? Number(m[1]) : null; }
+function utolsoForras() { if (S.utolsoForras) return S.utolsoForras; try { S.utolsoForras = JSON.parse(sessionStorage.getItem('utolsoForras') || 'null'); } catch (e) { S.utolsoForras = null; } return S.utolsoForras; }
+function utolsoForrasMent(fid, hiv) { S.utolsoForras = { fid, hiv: hiv || '', szid: aktSzemelyHash() }; try { sessionStorage.setItem('utolsoForras', JSON.stringify(S.utolsoForras)); } catch (e) { /* nincs tárolás */ } }
+function forrasElotolt(prefix) {
+  const u = utolsoForras(); if (!u || !$('#' + prefix + '-fs')) return;
+  const sel = $('#' + prefix + '-fs'); if (![...sel.options].some(o => o.value === String(u.fid))) return;
+  sel.value = String(u.fid);
+  const ugyanaz = u.szid && u.szid === aktSzemelyHash();
+  if (ugyanaz && u.hiv) $('#' + prefix + '-hiv').value = u.hiv;
+  const nev = (S.kt.forras.get(u.fid) || {}).megnevezes || '';
+  const h = document.createElement('p'); h.className = 'small muted'; h.style.margin = '0 0 4px';
+  h.innerHTML = `Előtöltve az előző javításod forrása${ugyanaz && u.hiv ? ' és hivatkozása' : ''}: <b>${esc(nev)}</b>. Ha más a forrás, válassz másikat. <a href="#" data-ft="${prefix}">ürítés</a>`;
+  sel.closest('fieldset').insertBefore(h, sel.closest('label'));
+  h.querySelector('[data-ft]').addEventListener('click', e => { e.preventDefault(); sel.value = ''; $('#' + prefix + '-hiv').value = ''; h.remove(); });
+}
 function forrasValaszto(prefix) {
+  setTimeout(() => forrasElotolt(prefix), 0);
   const fr = [...S.kt.forras.values()].filter(f => f.fazis !== 'KIG-féle kutatás' && !/^(harmonizációs|kódlista|kódolói|származtatott)/.test(f.tipus || ''))
     .sort((a, b) => (b.tipus === 'belső ellenőrzés') - (a.tipus === 'belső ellenőrzés'));
   return `<fieldset class="forras-box"><legend>Forrás (kötelező${prefix === 'kf' ? ' a karrieradatok javításához; a harmonizált besoroláshoz nem kell' : ''})</legend>
@@ -834,12 +851,14 @@ async function forrasAzonosito(prefix) {
   if (v !== 'uj') {
     if ((S.kt.forras.get(Number(v)) || {}).tipus === 'belső ellenőrzés' && !$('#' + prefix + '-megj').value.trim())
       throw new Error('Elírás javításánál a Megjegyzésben röviden írd le, miből látszik az elírás (pl. „a születési év 1905, így 1993 nem lehet; helyesen 1893”).');
+    utolsoForrasMent(Number(v), $('#' + prefix + '-hiv')?.value);
     return Number(v);
   }
   const nev = $('#' + prefix + '-un').value.trim();
   if (!nev) throw new Error('Add meg az új forrás megnevezését.');
   const { data } = await q(sb.rpc('forras_felvesz', { p_megnevezes: nev, p_tipus: $('#' + prefix + '-ut').value, p_hivatkozas: null }));
   S.kt = null; await kodtablak();
+  utolsoForrasMent(Number(data), $('#' + prefix + '-hiv')?.value);
   return data;
 }
 function alapSzerkeszt(P, id) {
