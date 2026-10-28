@@ -675,13 +675,21 @@ function profilRender(P, id) {
     { c: 'Tanítási nyelv', f: s => kod(s.tanitasinyelv) },
     { c: 'Végzettség', f: s => kod(s['vegzettségkod']) },
   ]);
-  const karrier = P.karrier && P.karrier.length ? `<div class="tbl-wrap"><table id="kar-tbl"><thead><tr><th>Időszak</th><th>Foglalkozás</th><th>Munkahely</th><th>Helyszín</th><th>Forrás</th><th>Harmonizált</th><th>Hivatás1</th><th>Hivatás2</th><th>Specifikáció</th><th>Harm. forrás</th><th>Állapot</th><th></th></tr></thead><tbody>${
-    P.karrier.map(k => { const jm = k.javitott_mezok || [], jv = m => jm.includes(m) ? ` <span class="muted small" title="Javított érték; eredetileg: ${esc(k.eredeti?.[m] ?? '—')}">*</span>` : '';
+  const EGYEB = 'egyesületi és egyéb';
+  const karrierMunka = (P.karrier || []).filter(k => k.tevekenyseg !== EGYEB), karrierEgyeb = (P.karrier || []).filter(k => k.tevekenyseg === EGYEB);
+  const tevGomb = (k, cel) => `<button class="btn small" data-tev="${k.karrierid}" data-cel="${cel}" title="${cel === EGYEB ? 'Áthelyezés az egyesületi és egyéb tevékenységek közé (nem fizetett munka)' : 'Áthelyezés a karrierbe (fizetett munka)'}">${cel === EGYEB ? '→ egyéb' : '→ karrier'}</button>`;
+  const egyeb = karrierEgyeb.length ? `<div class="tbl-wrap"><table id="egyeb-tbl"><thead><tr><th>Időszak</th><th>Tevékenység</th><th>Szervezet</th><th>Helyszín</th><th>Forrás</th><th>Kódolói jelölés</th><th></th></tr></thead><tbody>${
+    karrierEgyeb.map(k => `<tr><td>${idoszak(k.elsoev, k.utolsoev)}</td><td>${dash(k.foglalkozas)}</td><td class="small">${dash(k.munkahely)}</td><td class="small">${dash(k.helyszin)}</td><td>${forrasBadge(k.forras, k.fazis)}</td>
+      <td class="small muted">${esc(k.harmonizalt || '')}</td><td style="white-space:nowrap">${tevGomb(k, 'fizetett munka')} <button class="btn small" data-kj="${k.karrierid}">${S.szerkEz ? 'Javítás' : 'Besorolás'}</button></td></tr>`).join('')}</tbody></table></div>
+    <p class="small muted">Nem fizetett munka (egyesületi tisztség, igazgatósági tagság, szakértői megbízás stb.). Az áthelyezés kutatói döntés: forrással és időbélyeggel rögzül, és visszafordítható.</p><div id="detail-egyeb" style="margin-top:12px"></div>`
+    : '<p class="muted">Nincs ilyen tevékenység. A karrier táblában a „→ egyéb” gombbal helyezhetsz ide egy állomást.</p>';
+  const karrier = karrierMunka.length ? `<div class="tbl-wrap"><table id="kar-tbl"><thead><tr><th>Időszak</th><th>Foglalkozás</th><th>Munkahely</th><th>Helyszín</th><th>Forrás</th><th>Harmonizált</th><th>Hivatás1</th><th>Hivatás2</th><th>Specifikáció</th><th>Harm. forrás</th><th>Állapot</th><th></th></tr></thead><tbody>${
+    karrierMunka.map(k => { const jm = k.javitott_mezok || [], jv = m => jm.includes(m) ? ` <span class="muted small" title="Javított érték; eredetileg: ${esc(k.eredeti?.[m] ?? '—')}">*</span>` : '';
       const evJav = jm.includes('elsoev') || jm.includes('utolsoev');
       return `<tr ${k.harm_id ? `class="click" data-h="${k.harm_id}"` : ''}><td>${idoszak(k.elsoev, k.utolsoev)}${evJav ? jv(jm.includes('elsoev') ? 'elsoev' : 'utolsoev') : (k.leiras && k.leiras.startsWith('? kód') ? ` <span class="badge b-warn">${esc(k.leiras)}</span>` : '')}</td>
       <td>${dash(k.foglalkozas)}${jv('foglalkozas')}</td><td class="small">${dash(k.munkahely)}${jv('munkahely')}</td><td class="small">${dash(k.helyszin)}${jv('helyszin')}</td><td>${forrasBadge(k.forras, k.fazis)}</td>
       ${k.harm_id ? `<td>${harmF(k, 'harmonizalt')}</td><td>${harmF(k, 'hivatas1')}</td><td>${harmF(k, 'hivatas2')}</td><td class="small">${esc(k.specifikacio || '')}</td>
-      <td>${forrasBadge(k.harm_forras || 'ElitData2026', 'ElitData2026')}</td><td>${allapotBadge(k.harm_allapot)}</td>` : NEMHARM(6)}<td><button class="btn small" data-kj="${k.karrierid}">${S.szerkEz ? 'Javítás' : 'Besorolás'}</button></td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nincs karrieradat.</p>';
+      <td>${forrasBadge(k.harm_forras || 'ElitData2026', 'ElitData2026')}</td><td>${allapotBadge(k.harm_allapot)}</td>` : NEMHARM(6)}<td style="white-space:nowrap"><button class="btn small" data-kj="${k.karrierid}">${S.szerkEz ? 'Javítás' : 'Besorolás'}</button> ${tevGomb(k, EGYEB)}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nincs karrieradat.</p>';
   const karrierpoz = tabla(P.karrierpoziciok, [{ c: 'Belépés éve', f: s => evF(s.belepesev) }, { c: 'Pozíciókód évenként', f: s => pozkod(s), cls: 'small' }]);
   const csalad = tabla(P.csalad, [
     { c: 'Viszony', f: s => elit ? esc(SZEREP[s.szerep] || (s.szerep || '').toLowerCase().replace('_', ' ') || s.viszony) : esc(s.viszony) + (Number(s.elittage) === 1 ? ' <span class="badge b-info">elittag</span>' : '') },
@@ -756,7 +764,8 @@ function profilRender(P, id) {
     ['vallas', 'Vallás', vallas, db(P.vallas)],
     ['nemesseg', 'Nemesség, névváltoztatás', nemes],
     ['tanulmanyok', 'Tanulmányok', tanul, db(P.tanulmanyok)],
-    ['karrier', 'Karrier és harmonizáció', karrier + (db(P.karrierpoziciok) ? '<h4>Karrierpozíciók</h4>' + karrierpoz : '') + '<div id="detail" style="margin-top:12px"></div>', db(P.karrier)],
+    ['karrier', 'Karrier és harmonizáció', karrier + (db(P.karrierpoziciok) ? '<h4>Karrierpozíciók</h4>' + karrierpoz : '') + '<div id="detail" style="margin-top:12px"></div>', karrierMunka.length],
+    ['egyeb', 'Egyesületi és egyéb tevékenység', egyeb, karrierEgyeb.length],
     ['kituntetes', 'Kitüntetések, díjak, címek', kituntetes || '<p class="muted">Nincs adat.</p>'],
     ['szervezet', 'Szervezeti tagság', szerv || '<p class="muted">Nincs adat.</p>'],
     ['politika', 'Politika, perek', politika || '<p class="muted">Nincs adat.</p>'],
@@ -1192,6 +1201,16 @@ async function szemelyLap(id) {
       try { await q(sb.rpc('csoport_tag', { p_csoport_id: Number(cb.dataset.csop), p_szemelyid: id, p_be: cb.checked })); }
       catch (err) { cb.checked = !cb.checked; alert('Hiba: ' + hibaSzoveg(err)); }
     }));
+    app.querySelectorAll('[data-tev]').forEach(b => b.addEventListener('click', async e => {
+      e.stopPropagation(); b.disabled = true;
+      try { await q(sb.rpc('karrier_tevekenyseg', { p_karrierid: Number(b.dataset.tev), p_tipus: b.dataset.cel, p_megjegyzes: null }));
+        await szemelyLap(id); $(b.dataset.cel === 'egyesületi és egyéb' ? '#sz-egyeb' : '#sz-karrier')?.scrollIntoView();
+      } catch (err) { b.disabled = false; alert('Hiba: ' + hibaSzoveg(err)); }
+    }));
+    $('#egyeb-tbl tbody')?.addEventListener('click', e => {
+      const kb = e.target.closest('[data-kj]'); if (!kb) return;
+      karrierSzerk(Number(kb.dataset.kj), $('#detail-egyeb'), () => szemelyLap(id).then(() => $('#sz-egyeb')?.scrollIntoView())).catch(err => hibaKiir($('#detail-egyeb'), err));
+    });
     $('#kar-tbl tbody')?.addEventListener('click', e => {
       const kb = e.target.closest('[data-kj]');
       if (kb) { karrierSzerk(Number(kb.dataset.kj), $('#detail'), () => szemelyLap(id).then(() => $('#sz-karrier')?.scrollIntoView())).catch(err => hibaKiir($('#detail'), err)); $('#detail').scrollIntoView({ behavior: 'smooth' }); return; }
