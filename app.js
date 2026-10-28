@@ -69,13 +69,22 @@ const SZEMELYMEZO = {
 };
 const REJTETT_MEZO = new Set(['elittage', 'eredetiazon1', 'eredetiazon2', 'adatforraslap', 'rogzitesdatuma']);
 function msg(el, text, kind = 'info') { el.innerHTML = `<div class="msg ${kind}">${esc(text)}</div>`; }
-async function q(promise) { const { data, error, count } = await promise; if (error) throw error; return { data, count }; }
+// átmeneti szerverhiba (pl. ébredő adatbázis, időtúllépés) esetén egyszer újrapróbálja
+async function q(promise) {
+  let { data, error, count, status } = await promise;
+  if (error && (status >= 500 || !error.message) && typeof promise.then === 'function' && promise.url) {
+    await new Promise(r => setTimeout(r, 1500));
+    ({ data, error, count } = await promise);
+  }
+  if (error) throw error; return { data, count };
+}
 function hibaSzoveg(e) {
   if (!e) return 'ismeretlen hiba';
   if (typeof e === 'string') return e;
   const t = e.message || e.details || e.hint || e.error_description || '';
   if (/statement timeout|canceling statement/i.test(t) || e.code === '57014') return 'a lekérdezés túl sokáig tartott (időtúllépés) – próbáld újra, ha tartósan fennáll, szólj.';
-  return t || JSON.stringify(e);
+  if (!t) return 'a szerver nem válaszolt időben (valószínűleg éppen ébredt vagy túlterhelt) – töltsd újra az oldalt.';
+  return t;
 }
 function hibaKiir(el, e) { console.error(e); msg(el, 'Hiba: ' + hibaSzoveg(e), 'err'); }
 function pager(total, page, onGo) {
@@ -186,13 +195,14 @@ async function nyitottLap() {
     <div class="grid2"><div><div class="tbl-wrap" id="ny-list"></div><div id="ny-pager"></div></div><div class="sticky" id="ny-detail"></div></div>`;
   const st = { tipus: 'szabálydöntés', page: 0, kereses: '' };
   try {
-    const counts = await Promise.all(TIPUSOK.map(t => q(sb.from('v_dontesre_var').select('*', { count: 'exact', head: true }).eq('tipus', t))));
+    const { data: sz } = await q(sb.rpc('dontesre_var_szamok'));
+    const counts = TIPUSOK.map(t => ({ count: Number((sz || []).find(r => r.tipus === t)?.db || 0) }));
     const chips = $('#ny-chips');
     const rajz = () => { chips.innerHTML = TIPUSOK.map((t, i) => counts[i].count ? `<span class="chip ${st.tipus === t ? 'on' : ''}" data-t="${esc(t)}">${esc(t)}<b>${counts[i].count}</b></span>` : '').join('') || '<span class="muted">Nincs nyitott kérdés.</span>'; };
     rajz();
     chips.addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return; st.tipus = c.dataset.t; st.page = 0; rajz(); lista(); });
     if (!counts[0].count) { const i = counts.findIndex(c => c.count); if (i >= 0) { st.tipus = TIPUSOK[i]; rajz(); } }
-  } catch (e) { return hibaKiir(app, e); }
+  } catch (e) { if ($('#ny-chips')) hibaKiir(app, e); return; } // ha közben másik fülre váltott, ne írja felül
   $('#ny-q').addEventListener('input', debounce(e => { st.kereses = tiszta(e.target.value); st.page = 0; lista(); }));
   $('#ny-detail').innerHTML = '<div class="card empty">Válassz egy tételt a listából.</div>';
   async function lista() {
