@@ -665,13 +665,13 @@ function profilRender(P, id) {
     { c: 'Tanítási nyelv', f: s => kod(s.tanitasinyelv) },
     { c: 'Végzettség', f: s => kod(s['vegzettségkod']) },
   ]);
-  const karrier = P.karrier && P.karrier.length ? `<div class="tbl-wrap"><table id="kar-tbl"><thead><tr><th>Időszak</th><th>Foglalkozás</th><th>Munkahely</th><th>Helyszín</th><th>Forrás</th><th>Harmonizált</th><th>Hivatás1</th><th>Hivatás2</th><th>Specifikáció</th><th>Harm. forrás</th><th>Állapot</th>${S.szerkEz ? '<th></th>' : ''}</tr></thead><tbody>${
+  const karrier = P.karrier && P.karrier.length ? `<div class="tbl-wrap"><table id="kar-tbl"><thead><tr><th>Időszak</th><th>Foglalkozás</th><th>Munkahely</th><th>Helyszín</th><th>Forrás</th><th>Harmonizált</th><th>Hivatás1</th><th>Hivatás2</th><th>Specifikáció</th><th>Harm. forrás</th><th>Állapot</th><th></th></tr></thead><tbody>${
     P.karrier.map(k => { const jm = k.javitott_mezok || [], jv = m => jm.includes(m) ? ` <span class="muted small" title="Javított érték; eredetileg: ${esc(k.eredeti?.[m] ?? '—')}">*</span>` : '';
       const evJav = jm.includes('elsoev') || jm.includes('utolsoev');
       return `<tr ${k.harm_id ? `class="click" data-h="${k.harm_id}"` : ''}><td>${idoszak(k.elsoev, k.utolsoev)}${evJav ? jv(jm.includes('elsoev') ? 'elsoev' : 'utolsoev') : (k.leiras && k.leiras.startsWith('? kód') ? ` <span class="badge b-warn">${esc(k.leiras)}</span>` : '')}</td>
       <td>${dash(k.foglalkozas)}${jv('foglalkozas')}</td><td class="small">${dash(k.munkahely)}${jv('munkahely')}</td><td class="small">${dash(k.helyszin)}${jv('helyszin')}</td><td>${forrasBadge(k.forras, k.fazis)}</td>
       ${k.harm_id ? `<td>${harmF(k, 'harmonizalt')}</td><td>${harmF(k, 'hivatas1')}</td><td>${harmF(k, 'hivatas2')}</td><td class="small">${esc(k.specifikacio || '')}</td>
-      <td>${forrasBadge(k.harm_forras || 'ElitData2026', 'ElitData2026')}</td><td>${allapotBadge(k.harm_allapot)}</td>` : NEMHARM(6)}${S.szerkEz ? `<td><button class="btn small" data-kj="${k.karrierid}">Javítás</button></td>` : ''}</tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nincs karrieradat.</p>';
+      <td>${forrasBadge(k.harm_forras || 'ElitData2026', 'ElitData2026')}</td><td>${allapotBadge(k.harm_allapot)}</td>` : NEMHARM(6)}<td><button class="btn small" data-kj="${k.karrierid}">${S.szerkEz ? 'Javítás' : 'Besorolás'}</button></td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nincs karrieradat.</p>';
   const karrierpoz = tabla(P.karrierpoziciok, [{ c: 'Belépés éve', f: s => evF(s.belepesev) }, { c: 'Pozíciókód évenként', f: s => pozkod(s), cls: 'small' }]);
   const csalad = tabla(P.csalad, [
     { c: 'Viszony', f: s => elit ? esc(SZEREP[s.szerep] || (s.szerep || '').toLowerCase().replace('_', ' ') || s.viszony) : esc(s.viszony) + (Number(s.elittage) === 1 ? ' <span class="badge b-info">elittag</span>' : '') },
@@ -1244,7 +1244,12 @@ async function karrierSzerk(karrierid, d, utana) {
       ${forrasValaszto('kf')}
       <div class="toolbar"><button class="btn primary" type="submit">Mentés</button></div><div id="kf-msg"></div>
       <p class="muted small">A javítás új bejegyzésként kerül be; az eredeti adat megmarad és a javítás visszavonható.</p></form>`
-      : '<p class="msg info">Ennek a személynek az adatait nem javíthatod (a hozzád rendelt csoporton kívül esik).</p>'}
+      : `<p class="msg info">A karrierállomás adatait nem javíthatod (a személy a hozzád rendelt csoporton kívül esik), a harmonizált besorolását viszont igen.</p>
+        <form class="form" id="kh-f"><h4 style="margin:6px 0 4px">Harmonizált besorolás</h4>
+        <p class="small muted" style="margin:0 0 6px">${k.harm_id ? 'A módosítás egyedi döntésként kerül be; a kódoló által beírt érték megmarad.' : 'Ez az állomás még nincs harmonizálva; mentéskor új besorolás jön létre.'} Ha van harmonizált foglalkozás vagy Hivatás1, az üres Hivatás2 NINCS-et jelent.</p>
+        <div class="szerk-racs">${HM.map(hmMezo).join('')}</div>
+        <label>Megjegyzés (nem kötelező)<input id="kh-megj"></label>
+        <div class="toolbar"><button class="btn primary" type="submit">Mentés</button></div><div id="kh-msg"></div></form>`}
     ${jav && jav.length ? `<h4>Korábbi javítások</h4><div class="tbl-wrap"><table><thead><tr><th>Mező</th><th>Új érték</th><th>Forrás</th><th>Hivatkozás</th><th>Ki, mikor</th><th></th></tr></thead><tbody>${
       jav.map(x => `<tr class="${x.elfogadott === false ? 'visszavont' : ''}"><td>${esc((KMEZO.find(m => m[0] === x.mezo) || [, x.mezo])[1])}</td><td>${dash(x.ertek)}</td>
         <td class="small">${esc((S.kt.forras.get(x.forras_id) || {}).megnevezes || '')}</td><td class="small">${dash(x.hivatkozas)}${x.megjegyzes ? `<br><span class="muted">${esc(x.megjegyzes)}</span>` : ''}</td>
@@ -1256,7 +1261,18 @@ async function karrierSzerk(karrierid, d, utana) {
     if (!confirm('Biztosan visszavonod ezt a javítást?')) return;
     try { await q(sb.rpc('sorjavitas_visszavon', { p_javitas_id: Number(b.dataset.sv) })); karrierSzerk(karrierid, d, utana); } catch (err) { alert('Hiba: ' + hibaSzoveg(err)); }
   }));
-  if (!szerk) return;
+  if (!szerk) {
+    $('#kh-f', d)?.addEventListener('submit', async e => {
+      e.preventDefault(); const btn = e.target.querySelector('button[type=submit]'); const hvalt = {};
+      d.querySelectorAll('label[data-hm]').forEach(l => { const uj = l.querySelector('select,input').value.trim(); if (uj !== l.dataset.eredeti) hvalt[l.dataset.hm] = uj; });
+      if (!Object.keys(hvalt).length) return msg($('#kh-msg', d), 'Nem változott semmi.', 'info');
+      btn.disabled = true;
+      try { await q(sb.rpc('karrier_harm_ment', { p_karrierid: karrierid, p_ertekek: hvalt, p_megjegyzes: $('#kh-megj', d).value || null }));
+        msg($('#kh-msg', d), 'A besorolás rögzítve.', 'ok'); setTimeout(utana, 900);
+      } catch (err) { btn.disabled = false; hibaKiir($('#kh-msg', d), err); }
+    });
+    return;
+  }
   d.querySelectorAll('[data-jel]').forEach(b => b.addEventListener('click', () => { const [x, y] = b.dataset.jel.split('-'); $('#kf-elsoev').value = x; $('#kf-utolsoev').value = y; }));
   $('#kf-fs').addEventListener('change', e => $('#kf-uj').classList.toggle('hidden', e.target.value !== 'uj'));
   $('#kf-f').addEventListener('submit', async e => {
