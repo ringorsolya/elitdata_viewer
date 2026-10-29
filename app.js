@@ -241,7 +241,7 @@ async function tetel(r, utana) {
   } catch (e) { hibaKiir(d, e); }
 }
 async function szerkHet(szemelyid) {
-  if (!szemelyid) return S.donto;
+  if (!szemelyid) return true; // minden munkatárs mindent javíthat
   if (!S.szerkCache.has(szemelyid)) { const { data } = await q(sb.rpc('szerkesztheti', { p_szemelyid: szemelyid })); S.szerkCache.set(szemelyid, !!data); }
   return S.szerkCache.get(szemelyid);
 }
@@ -1384,7 +1384,7 @@ async function csoportokLap() {
         <h3 style="margin:0 0 4px">${esc(c.nev)}</h3><p class="muted small" style="margin:0 0 8px">${esc(c.leiras || '')}</p>
         <div class="halad"><div style="width:${pct}%"></div></div>
         <p class="small" style="margin:6px 0 0">${x.n} fő · <b>${x.ok}</b> ellenőrizve${x.kerd ? ` · <span class="badge b-bad">${x.kerd} kérdéses</span>` : ''}</p></div>`; }).join('') || '<p class="muted">Még nincs csoport.</p>'}</div>
-      ${S.donto ? `<form class="form card" id="ucs-f" style="max-width:560px;margin-top:16px"><h3 style="margin-top:0">Új csoport</h3>
+      ${true ? `<form class="form card" id="ucs-f" style="max-width:560px;margin-top:16px"><h3 style="margin-top:0">Új csoport</h3>
         <label>Név<input id="ucs-n" required placeholder="pl. jogászok"></label>
         <label>Kezdő tagság: akiknek a harmonizált Hivatás1 vagy Hivatás2 értéke<input id="ucs-h" list="dl-hiv" placeholder="pl. JOGÁSZ (üresen: üres csoport, kézzel töltöd fel)"></label>${datalist('dl-hiv', [...new Set([...k.hivatas1, ...k.hivatas2])].sort((a, b) => a.localeCompare(b, 'hu')))}
         <label>Leírás<input id="ucs-l"></label>
@@ -1423,7 +1423,7 @@ function csoportTagok(c, tagok) {
   const box = $('#cs-tartalom');
   box.innerHTML = `<div class="toolbar"><input type="search" id="ct-q" placeholder="Név…">
       <select id="ct-f"><option value="">Mind</option><option value="nincs">Még nincs ellenőrizve</option><option value="kérdéses">Kérdéses</option><option value="ellenőrizve">Ellenőrizve</option><option value="teendo">Van nyitott tétel</option></select>
-      ${c.hivatas && S.donto ? '<button class="btn" id="ct-frissit" title="Az azóta ezzel a hivatással besorolt személyek felvétele">Kiegészítés a hivatás alapján</button>' : ''}</div>
+      ${c.hivatas ? '<button class="btn" id="ct-frissit" title="Az azóta ezzel a hivatással besorolt személyek felvétele">Kiegészítés a hivatás alapján</button>' : ''}</div>
     <div class="tbl-wrap" id="ct-list"></div>
     ${S.szerkEz !== undefined ? `<form class="form card" id="ct-uj" style="max-width:560px;margin-top:16px"><h3 style="margin-top:0">Személy felvétele a csoportba</h3>
       <label>Név<input id="ct-un" placeholder="Kezdd el írni a nevet…" autocomplete="off"></label><div id="ct-talalat"></div></form>` : ''}`;
