@@ -312,7 +312,8 @@ async function szabalyReszlet(id, d, utana, uzenet) {
         <label><input type="radio" name="mod" value="atir"> <span>Átírjuk / áthelyezzük másik értékre vagy mezőbe</span></label>
         <label><input type="radio" name="mod" value="spec"> <span>Specifikációba kerül</span></label>
         <label><input type="radio" name="mod" value="spec2"> <span>Specifikációba kerül, <b>és</b> egy másik mezőbe más érték kerül (pl. Hivatás2: PAP)</span></label>
-        <label><input type="radio" name="mod" value="elutasit"> <span>Elutasítjuk (a beírt érték érvénytelen, egyedileg kell javítani)</span></label>
+        ${s.oszlop !== 'harmonizalt' ? `<label><input type="radio" name="mod" value="torol"> <span><b>Töröljük</b> – a beírt érték kikerül, a mező üres lesz (${esc(MEZONEV[s.oszlop])} = NINCS) minden érintett sorban</span></label>` : ''}
+        <label><input type="radio" name="mod" value="elutasit"> <span>Elutasítjuk, de nem írjuk felül – a sorok <b>döntésre várnak</b>, mindegyiket egyenként kell javítani</span></label>
       </div>
       <div id="elir" class="hidden form">
         ${(() => { const h = hasonlok(s.beirt_ertek, k[s.oszlop] || []); return h.length ? `<div class="small">Hasonló listás értékek: ${h.map(v => `<button type="button" class="btn small" data-hasonlo="${esc(v)}">${esc(v)}</button>`).join(' ')}</div>` : '<p class="muted small" style="margin:0">Nincs hasonló érték a listán – írd be a helyes alakot.</p>'; })()}
@@ -349,7 +350,9 @@ async function szabalyReszlet(id, d, utana, uzenet) {
   dl(); $('#celo', d).addEventListener('change', dl);
   const dl2 = () => { $('#dl2-wrap', d).innerHTML = datalist('dl-cel2', k[$('#cel2o', d).value] || []); };
   dl2(); $('#cel2o', d).addEventListener('change', dl2);
-  if (s.cel_oszlop === 'specifikacio' && s.cel2_oszlop) f.mod.value = 'spec2';
+  if (s.cel_oszlop === s.oszlop && s.cel_ertek === 'NINCS' && f.querySelector('[value=torol]')) f.mod.value = 'torol';
+  else if (s.allapot === 'elutasítva') f.mod.value = 'elutasit';
+  else if (s.cel_oszlop === 'specifikacio' && s.cel2_oszlop) f.mod.value = 'spec2';
   else if (s.cel_oszlop === 'specifikacio') f.mod.value = 'spec'; else if (s.cel_oszlop === s.oszlop && s.cel_ertek && s.cel_ertek.toUpperCase() !== s.beirt_ertek.toUpperCase()) f.mod.value = 'elir';
   else if (s.cel_oszlop && s.cel_oszlop !== s.oszlop || (s.cel_ertek && s.cel_ertek !== s.beirt_ertek)) f.mod.value = 'atir';
   d.querySelectorAll('[data-hasonlo]').forEach(b => b.addEventListener('click', () => { $('#elire', d).value = b.dataset.hasonlo; }));
@@ -383,6 +386,8 @@ async function szabalyReszlet(id, d, utana, uzenet) {
         await q(sb.rpc('dont_szabaly', { p_szabaly_id: id, p_allapot: 'elfogadva', p_cel_oszlop: 'specifikacio', p_cel_ertek: s.beirt_ertek, p_megjegyzes: megj || null, p_cel2_oszlop: $('#cel2o', d).value, p_cel2_ertek: v2 }));
       } else if (f.mod.value === 'spec') {
         await q(sb.rpc('dont_szabaly', { p_szabaly_id: id, p_allapot: 'elfogadva', p_cel_oszlop: 'specifikacio', p_cel_ertek: s.beirt_ertek, p_megjegyzes: megj || null }));
+      } else if (f.mod.value === 'torol') {
+        await q(sb.rpc('dont_szabaly', { p_szabaly_id: id, p_allapot: 'elfogadva', p_cel_oszlop: s.oszlop, p_cel_ertek: 'NINCS', p_megjegyzes: megj || 'A beírt érték törölve (NINCS).' }));
       } else {
         await q(sb.rpc('dont_szabaly', { p_szabaly_id: id, p_allapot: 'elutasítva', p_cel_oszlop: null, p_cel_ertek: null, p_megjegyzes: megj || null }));
       }
