@@ -874,38 +874,107 @@ function javitasLista(P, fb) {
       <td class="small">${dash(x.hivatkozas)}${x.megjegyzes ? `<br><span class="muted">${esc(x.megjegyzes)}</span>` : ''}</td><td class="small">${esc(x.rogzitette || '')}<br>${new Date(x.rogzitve).toLocaleString('hu-HU')}</td>
       <td>${x.elfogadott === false ? '<span class="badge b-gray">visszavonva</span>' : (S.szerkEz ? `<button class="btn small" data-visszavon="${x.allitas_id}">Visszavonás</button>` : '')}</td></tr>`).join('')}</tbody></table></div></details>`;
 }
-// az utoljára használt forrás megjegyzése (böngészőfülenként): ugyanannál a személynél a hivatkozás is előtöltődik
+// ---------- Forrásválasztás ----------
+// 1) kereshető választó (begépelés, a saját legutóbbi források elöl, figyelmeztetés hasonló nevű forrásra)
+// 2) laponkénti forrás: a személy adatlapján egyszer beállítva minden mentés ezt használja (felülírható)
+// 3) előtöltés: ha nincs laponkénti forrás, az előző javítás forrása
 function aktSzemelyHash() { const m = location.hash.match(/szemely=(\d+)/); return m ? Number(m[1]) : null; }
-function utolsoForras() { if (S.utolsoForras) return S.utolsoForras; try { S.utolsoForras = JSON.parse(sessionStorage.getItem('utolsoForras') || 'null'); } catch (e) { S.utolsoForras = null; } return S.utolsoForras; }
-function utolsoForrasMent(fid, hiv) { S.utolsoForras = { fid, hiv: hiv || '', szid: aktSzemelyHash() }; try { sessionStorage.setItem('utolsoForras', JSON.stringify(S.utolsoForras)); } catch (e) { /* nincs tárolás */ } }
-function forrasElotolt(prefix) {
-  const u = utolsoForras(); if (!u || !$('#' + prefix + '-fs')) return;
-  const sel = $('#' + prefix + '-fs'); if (![...sel.options].some(o => o.value === String(u.fid))) return;
-  sel.value = String(u.fid);
-  const ugyanaz = u.szid && u.szid === aktSzemelyHash();
-  if (ugyanaz && u.hiv) $('#' + prefix + '-hiv').value = u.hiv;
-  const nev = (S.kt.forras.get(u.fid) || {}).megnevezes || '';
-  const h = document.createElement('p'); h.className = 'small muted'; h.style.margin = '0 0 4px';
-  h.innerHTML = `Előtöltve az előző javításod forrása${ugyanaz && u.hiv ? ' és hivatkozása' : ''}: <b>${esc(nev)}</b>. Ha más a forrás, válassz másikat. <a href="#" data-ft="${prefix}">ürítés</a>`;
-  sel.closest('fieldset').insertBefore(h, sel.closest('label'));
-  h.querySelector('[data-ft]').addEventListener('click', e => { e.preventDefault(); sel.value = ''; $('#' + prefix + '-hiv').value = ''; h.remove(); });
+function tarOlv(k, alap) { try { return JSON.parse(sessionStorage.getItem(k) || 'null') ?? alap; } catch (e) { return alap; } }
+function tarIr(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* nincs tárolás */ } }
+function utolsoForras() { if (S.utolsoForras === undefined) S.utolsoForras = tarOlv('utolsoForras', null); return S.utolsoForras; }
+function legutobbiak() { try { return JSON.parse(localStorage.getItem('legutobbiForrasok') || '[]'); } catch (e) { return []; } }
+function utolsoForrasMent(fid, hiv) {
+  S.utolsoForras = { fid, hiv: hiv || '', szid: aktSzemelyHash() }; tarIr('utolsoForras', S.utolsoForras);
+  try { localStorage.setItem('legutobbiForrasok', JSON.stringify([fid, ...legutobbiak().filter(x => x !== fid)].slice(0, 8))); } catch (e) { /* nincs tárolás */ }
 }
-function forrasValaszto(prefix) {
-  setTimeout(() => forrasElotolt(prefix), 0);
-  const fr = [...S.kt.forras.values()].filter(f => f.fazis !== 'KIG-féle kutatás' && !/^(harmonizációs|kódlista|kódolói|származtatott)/.test(f.tipus || ''))
-    .sort((a, b) => (b.tipus === 'belső ellenőrzés') - (a.tipus === 'belső ellenőrzés'));
-  return `<fieldset class="forras-box"><legend>Forrás (kötelező${prefix === 'kf' ? ' a karrieradatok javításához; a harmonizált besoroláshoz nem kell' : ''})</legend>
-    <label>Forrás<select id="${prefix}-fs"><option value="">— válassz —</option>${fr.map(f => `<option value="${f.forras_id}">${esc(f.megnevezes)}</option>`).join('')}<option value="uj">+ Új forrás felvétele…</option></select></label>
+function lapForras(szid = aktSzemelyHash()) { return szid ? (tarOlv('lapForras', {})[szid] || null) : null; }
+function lapForrasMent(szid, v) { const m = tarOlv('lapForras', {}); if (v) m[szid] = v; else delete m[szid]; tarIr('lapForras', m); }
+const forrasNev = fid => (S.kt.forras.get(Number(fid)) || {}).megnevezes || '';
+function valaszthatoForrasok() {
+  const leg = legutobbiak();
+  return [...S.kt.forras.values()].filter(f => f.fazis !== 'KIG-féle kutatás' && !/^(harmonizációs|kódlista|kódolói|származtatott)/.test(f.tipus || ''))
+    .sort((a, b) => {
+      const la = leg.indexOf(a.forras_id), lb = leg.indexOf(b.forras_id);
+      if ((la >= 0) !== (lb >= 0)) return la >= 0 ? -1 : 1;
+      if (la >= 0) return la - lb;
+      return a.megnevezes.localeCompare(b.megnevezes, 'hu');
+    });
+}
+// hasonló név: ékezet, írásjel, évszám és kis/nagybetű nélkül összevetve
+function forrasKulcs(t) { return (t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\(.*?\)|\d+|[–\-.,:;\/]|arcanum|adt|hungaricana/g, ' ').split(/\s+/).filter(w => w.length > 2); }
+function hasonloForras(nev) {
+  const k = new Set(forrasKulcs(nev)); if (!k.size) return null;
+  let leg = null, legP = 0;
+  for (const f of S.kt.forras.values()) {
+    const m = forrasKulcs(f.megnevezes); if (!m.length) continue;
+    const kozos = m.filter(w => k.has(w)).length, p = kozos / Math.min(k.size, m.length);
+    if (p > legP) { legP = p; leg = f; }
+  }
+  return legP >= 0.67 ? leg : null;
+}
+const UJ_FORRAS = '+ Új forrás felvétele…';
+function forrasKereso(prefix, alap) {
+  const fr = valaszthatoForrasok(), leg = legutobbiak();
+  return `<label>Forrás <span class="muted small">(kezdj el gépelni; a legutóbb használtak vannak elöl)</span>
+      <input id="${prefix}-fk" list="${prefix}-fl" autocomplete="off" placeholder="pl. Életrajzi, Révai, Névpont…" value="${esc(alap ? forrasNev(alap) : '')}">
+      <datalist id="${prefix}-fl">${fr.map(f => `<option value="${esc(f.megnevezes)}">${leg.includes(f.forras_id) ? 'legutóbb használt' : esc(f.tipus || '')}</option>`).join('')}<option value="${UJ_FORRAS}"></option></datalist>
+      <input type="hidden" id="${prefix}-fs" value="${alap ? esc(alap) : ''}"></label>
     <div id="${prefix}-uj" class="hidden form" style="margin-top:0">
       <label>Új forrás megnevezése<input id="${prefix}-un" placeholder="pl. Magyar Életrajzi Lexikon 1–4."></label>
+      <div id="${prefix}-hs"></div>
       <label>Típusa<select id="${prefix}-ut"><option>szakirodalom</option><option>levéltári forrás</option><option>lexikon, adattár</option><option>sajtó</option><option>internetes forrás</option><option>egyéb</option></select></label>
-    </div>
-    <label>Pontos hivatkozás (oldal, jelzet, URL)<input id="${prefix}-hiv" placeholder="pl. II. köt. 214. o. / MNL OL K 27 / https://…"></label>
-    <label>Megjegyzés<textarea id="${prefix}-megj"></textarea></label></fieldset>`;
+    </div>`;
+}
+function forrasKeresoBekot(prefix) {
+  const be = $('#' + prefix + '-fk'); if (!be || be.dataset.kotve) return; be.dataset.kotve = '1';
+  const fr = valaszthatoForrasok();
+  const frissit = () => {
+    const t = be.value.trim(), f = fr.find(x => x.megnevezes === t);
+    const uj = t === UJ_FORRAS;
+    $('#' + prefix + '-fs').value = f ? f.forras_id : (uj ? 'uj' : '');
+    $('#' + prefix + '-uj').classList.toggle('hidden', !uj);
+    if (uj && document.activeElement === be) $('#' + prefix + '-un').focus();
+    be.classList.toggle('hibas', !!t && !f && !uj);
+  };
+  be.addEventListener('input', frissit); be.addEventListener('change', frissit);
+  const un = $('#' + prefix + '-un');
+  un.addEventListener('input', () => {
+    const h = hasonloForras(un.value), box = $('#' + prefix + '-hs');
+    box.innerHTML = h ? `<div class="msg info small">Hasonló forrás már van: <b>${esc(h.megnevezes)}</b>. <a href="#" data-hasznal="${h.forras_id}">Ezt használom</a></div>` : '';
+    const a = box.querySelector('[data-hasznal]');
+    if (a) a.addEventListener('click', e => { e.preventDefault(); be.value = h.megnevezes; $('#' + prefix + '-fs').value = h.forras_id; $('#' + prefix + '-uj').classList.add('hidden'); un.value = ''; box.innerHTML = ''; });
+  });
+}
+function forrasElotolt(prefix) {
+  forrasKeresoBekot(prefix);
+  if ($('#' + prefix + '-fs')?.value) return;
+  const u = utolsoForras(); if (!u || !$('#' + prefix + '-fs') || !forrasNev(u.fid)) return;
+  $('#' + prefix + '-fs').value = String(u.fid); $('#' + prefix + '-fk').value = forrasNev(u.fid);
+  const ugyanaz = u.szid && u.szid === aktSzemelyHash();
+  if (ugyanaz && u.hiv && !$('#' + prefix + '-hiv').value) $('#' + prefix + '-hiv').value = u.hiv;
+  const h = document.createElement('p'); h.className = 'small muted'; h.style.margin = '0 0 4px';
+  h.innerHTML = `Előtöltve az előző javításod forrása${ugyanaz && u.hiv ? ' és hivatkozása' : ''}. Ha más a forrás, írd át. <a href="#" data-ft="${prefix}">ürítés</a>`;
+  const fs = $('#' + prefix + '-fk').closest('fieldset'); fs.insertBefore(h, $('#' + prefix + '-fk').closest('label'));
+  h.querySelector('[data-ft]').addEventListener('click', e => { e.preventDefault(); $('#' + prefix + '-fs').value = ''; $('#' + prefix + '-fk').value = ''; $('#' + prefix + '-hiv').value = ''; h.remove(); });
+}
+function forrasValaszto(prefix) {
+  const lf = lapForras();
+  setTimeout(() => {
+    forrasKeresoBekot(prefix);
+    const m = $('#' + prefix + '-mas');
+    if (m) m.addEventListener('click', e => { e.preventDefault(); $('#' + prefix + '-reszl').classList.remove('hidden'); m.closest('p').remove(); });
+    if (!lf) forrasElotolt(prefix);
+  }, 0);
+  const tobbi = `${forrasKereso(prefix, lf ? lf.fid : null)}
+    <label>Pontos hivatkozás <span class="muted small">(ajánlott: oldal, jelzet vagy URL)</span><input id="${prefix}-hiv" value="${lf ? esc(lf.hiv || '') : ''}" placeholder="pl. II. köt. 214. o. / MNL OL K 27 / https://…"></label>`;
+  return `<fieldset class="forras-box"><legend>Forrás${prefix === 'kf' ? ' (a karrieradatok javításához kell; a harmonizált besoroláshoz nem)' : ''}</legend>
+    ${lf ? `<p class="small" style="margin:0">A lap forrása: <b>${esc(forrasNev(lf.fid))}</b>${lf.hiv ? ` · ${esc(lf.hiv)}` : ''} – ezzel mentjük. <a href="#" id="${prefix}-mas">Ennél a javításnál más a forrás</a></p>
+      <div id="${prefix}-reszl" class="hidden form" style="margin-top:0">${tobbi}</div>` : tobbi}
+    <label>Megjegyzés <span class="muted small">(nem kötelező; elírás javításánál írd le, miből látszik)</span><textarea id="${prefix}-megj" rows="2"></textarea></label></fieldset>`;
 }
 async function forrasAzonosito(prefix) {
   const v = $('#' + prefix + '-fs').value;
-  if (!v) throw new Error('Válassz forrást, vagy vegyél fel újat.');
+  if (!v) throw new Error($('#' + prefix + '-fk')?.value.trim() ? 'A beírt forrás nincs a listán – válaszd ki a felkínáltak közül, vagy válaszd a „+ Új forrás felvétele…” sort.' : 'Válassz forrást (kezdj el gépelni), vagy vegyél fel újat.');
   if (v !== 'uj') {
     if ((S.kt.forras.get(Number(v)) || {}).tipus === 'belső ellenőrzés' && !$('#' + prefix + '-megj').value.trim())
       throw new Error('Elírás javításánál a Megjegyzésben röviden írd le, miből látszik az elírás (pl. „a születési év 1905, így 1993 nem lehet; helyesen 1893”).');
@@ -914,10 +983,33 @@ async function forrasAzonosito(prefix) {
   }
   const nev = $('#' + prefix + '-un').value.trim();
   if (!nev) throw new Error('Add meg az új forrás megnevezését.');
+  const h = hasonloForras(nev);
+  if (h && !confirm(`Már van hasonló nevű forrás: „${h.megnevezes}”. Biztosan újat veszel fel („${nev}”)?`)) throw new Error('Válaszd ki a meglévő forrást, vagy módosítsd az új nevét.');
   const { data } = await q(sb.rpc('forras_felvesz', { p_megnevezes: nev, p_tipus: $('#' + prefix + '-ut').value, p_hivatkozas: null }));
   S.kt = null; await kodtablak();
   utolsoForrasMent(Number(data), $('#' + prefix + '-hiv')?.value);
   return data;
+}
+// a személy adatlapjának tetején: a lap forrása
+function lapForrasSav(id) {
+  const lf = lapForras(id);
+  setTimeout(() => {
+    const b = $('#lf-beallit'), t = $('#lf-torol'), n = $('#lf-nyit');
+    if (n) n.addEventListener('click', () => { $('#lf-urlap').classList.remove('hidden'); n.classList.add('hidden'); forrasKeresoBekot('lf'); $('#lf-fk').focus(); });
+    if (t) t.addEventListener('click', () => { lapForrasMent(id, null); szemelyLap(id); });
+    if (b) b.addEventListener('click', async () => {
+      try {
+        const fid = await forrasAzonosito('lf');
+        lapForrasMent(id, { fid: Number(fid), hiv: $('#lf-hiv').value.trim() }); szemelyLap(id);
+      } catch (err) { msg($('#lf-msg'), hibaSzoveg(err), 'err'); }
+    });
+  }, 0);
+  return `<div class="lap-forras">${lf
+    ? `<span>📖 A lap forrása: <b>${esc(forrasNev(lf.fid))}</b>${lf.hiv ? ` · ${esc(lf.hiv)}` : ''} – minden mentés ezzel történik.</span> <button class="btn small" id="lf-nyit">Másik</button> <button class="btn small" id="lf-torol">Kikapcsolás</button>`
+    : `<span class="muted">Ha ennél a személynél egy forrásból dolgozol, állítsd be egyszer, és nem kell minden mentésnél újra kiválasztani.</span> <button class="btn small" id="lf-nyit">Lap forrásának beállítása</button>`}
+    <div id="lf-urlap" class="hidden form" style="margin-top:8px"><fieldset class="forras-box"><legend>A lap forrása</legend>${forrasKereso('lf', lf ? lf.fid : null)}
+      <label>Pontos hivatkozás <span class="muted small">(ajánlott)</span><input id="lf-hiv" value="${lf ? esc(lf.hiv || '') : ''}" placeholder="pl. II. köt. 214. o. / https://…"></label>
+      <input type="hidden" id="lf-megj" value="-"><div><button class="btn primary" type="button" id="lf-beallit">Beállítás</button></div><div id="lf-msg"></div></fieldset></div></div>`;
 }
 function alapSzerkeszt(P, id) {
   const kt = S.kt, szul = ev(P.szemely.szuletesiev);
@@ -940,7 +1032,6 @@ function alapSzerkeszt(P, id) {
     <div class="szerk-racs">${JAVITHATO.filter(j => Number(P.szemely.elittage) === 1 || j[0] === 'tbl_szemelyek').map(mezo).join('')}</div>${forrasValaszto('af')}
     <div class="toolbar"><button class="btn primary" type="submit">Mentés</button><button class="btn" type="button" id="alap-megse">Mégse</button></div><div id="alap-msg"></div></form>`;
   box.querySelectorAll('label[data-k]').forEach(l => { const el = l.querySelector('input,select'); el.value = l.dataset.eredeti; });
-  $('#af-fs').addEventListener('change', e => $('#af-uj').classList.toggle('hidden', e.target.value !== 'uj'));
   $('#alap-megse').addEventListener('click', () => { box.innerHTML = ''; $('#alap-nezet').classList.remove('hidden'); $('#alap-szerk').classList.remove('hidden'); });
   $('#alap-f').addEventListener('submit', async e => {
     e.preventDefault();
@@ -1175,7 +1266,6 @@ async function szakaszSzerk(P, id, k) {
   box.innerHTML = `<form class="form" id="szf-${k}">${h}${forrasValaszto('sf' + k)}
     <div class="toolbar"><button class="btn primary" type="submit">Mentés</button><button class="btn" type="button" data-megse>Mégse</button></div><div id="szmsg-${k}"></div></form>`;
   const f = $('#szf-' + k);
-  $('#sf' + k + '-fs').addEventListener('change', e => $('#sf' + k + '-uj').classList.toggle('hidden', e.target.value !== 'uj'));
   f.querySelector('[data-megse]').addEventListener('click', () => { box.innerHTML = ''; $('#nezet-' + k).classList.remove('hidden'); box.parentElement.querySelector('[data-szakasz]').classList.remove('hidden'); });
   f.addEventListener('click', async e => {
     const t = e.target;
@@ -1292,7 +1382,7 @@ async function szemelyLap(id) {
           ? `<label class="csop-tag"><input type="checkbox" data-csop="${c.csoport_id}" ${tagja.has(c.csoport_id) ? 'checked' : ''}> ${esc(c.nev)}</label>`
           : (tagja.has(c.csoport_id) ? `<span class="badge b-info">${esc(c.nev)}</span>` : '')).join(' ') || '<span class="muted">—</span>'}
           ${S.szerkEz ? '' : ' <span class="badge b-gray">csak olvasható számodra</span>'}</p>
-        ${ellenorzesSav(id, csop, tagsag, P)}</div>
+        ${ellenorzesSav(id, csop, tagsag, P)}${S.szerkEz ? lapForrasSav(id) : ''}</div>
         <nav class="ugro">${R.tartalom.map(t => `<a href="#" data-ugro="${t[0]}">${esc(t[1])}</a>`).join('')}</nav></div>
       <div class="legend"><span>${forrasBadge('KIG-féle kutatás', 'KIG-féle kutatás')} KIG-féle kutatás</span><span>${forrasBadge('x', 'ElitData2026')} ElitData2026</span><span><span class="kod">kód N</span> a jelentése a KIG-kódkönyvből pótlandó</span></div>
       ${csoportSav(id)}
@@ -1421,7 +1511,6 @@ async function karrierSzerk(karrierid, d, utana) {
     return;
   }
   d.querySelectorAll('[data-jel]').forEach(b => b.addEventListener('click', () => { const [x, y] = b.dataset.jel.split('-'); $('#kf-elsoev').value = x; $('#kf-utolsoev').value = y; }));
-  $('#kf-fs').addEventListener('change', e => $('#kf-uj').classList.toggle('hidden', e.target.value !== 'uj'));
   $('#kf-f').addEventListener('submit', async e => {
     e.preventDefault();
     const btn = e.target.querySelector('button[type=submit]'); let valt = {};
@@ -1576,7 +1665,6 @@ async function csoportKarrier(c) {
     <div class="card ck-mentes" id="ck-mentes">${forrasValaszto('ck')}
       <div class="toolbar" style="margin:10px 0 0"><button class="btn primary" id="ck-ment" disabled>Mentés (0 sor)</button><button class="btn" id="ck-elvet" disabled>Változások elvetése</button></div><div id="ck-msg"></div></div>
     <div id="detail" style="margin-top:12px"></div>`;
-  $('#ck-fs').addEventListener('change', e => $('#ck-uj').classList.toggle('hidden', e.target.value !== 'uj'));
   const st = { page: 0, q: '', f: '' };
   const valtozott = new Map(); // karrierid -> {mezo: érték}
   const gombok = () => { const n = valtozott.size; $('#ck-ment').textContent = `Mentés (${n} sor)`; $('#ck-ment').disabled = !n; $('#ck-elvet').disabled = !n; };
