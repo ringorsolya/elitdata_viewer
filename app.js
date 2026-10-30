@@ -1614,9 +1614,9 @@ async function munkatarsakLap() {
 // ---------- Harmonizáció ----------
 async function harmLap() {
   app.innerHTML = `<h2>Harmonizáció</h2>
-    <p class="muted">A kódolói besorolások karrierállomásonként: a beírt és az érvényes (egységesített) érték. Kattints egy sorra a részletekhez és az egyedi döntéshez.</p>
+    <p class="muted">Áttekintő nézet: a kódolói besorolások karrierállomásonként, a beírt és az érvényes (egységesített) értékkel. Kattints egy sorra a részletekhez.</p>
+    <p class="msg info small">A döntésre váró értékeket a <a href="#" id="h-nyitott">Nyitott kérdések</a> fülön érdemes rendezni: ott minden érték egyszer szerepel, egy döntés az összes érintett sort rendezi, és onnan az egyes sorok is megnyithatók.</p>
     <div class="toolbar">
-      <select id="h-a"><option value="">Minden állapot</option><option>rendben</option><option>döntésre vár</option><option>ütközés</option><option>párosítatlan</option></select>
       <select id="h-f"><option value="">Minden forrás</option></select>
       <input type="search" id="h-q" placeholder="Érték (pl. KÖZGAZDÁSZ)…">
     </div>
@@ -1648,7 +1648,7 @@ async function harmLap() {
       $('#h-pager').innerHTML = ''; $('#h-pager').appendChild(pager(count, st.page, p => { st.page = p; lista(); }));
     } catch (e) { hibaKiir(box, e); }
   };
-  $('#h-a').addEventListener('change', e => { st.allapot = e.target.value; st.page = 0; lista(); });
+  $('#h-nyitott').addEventListener('click', e => { e.preventDefault(); const t = document.querySelector('[data-tab="nyitott"]'); if (t) t.click(); else nyitottLap(); });
   $('#h-f').addEventListener('change', e => { st.forras = e.target.value; st.page = 0; lista(); });
   $('#h-q').addEventListener('input', debounce(e => { st.kereses = tiszta(e.target.value); st.page = 0; lista(); }));
   lista();
