@@ -1191,8 +1191,9 @@ async function szemelyLap(id) {
     S.szerkEz = await szerkHet(id);
     const [{ data: csop }, { data: tagsag }] = await Promise.all([
       q(sb.from('tbl_csoportok').select('csoport_id,nev').order('nev')),
-      q(sb.from('tbl_csoport_tagok').select('csoport_id,elfogadott').eq('szemelyid', id)),
+      q(sb.from('tbl_csoport_tagok').select('csoport_id,elfogadott,ellenorzes,ellenorizte,ellenorzes_ideje,ellenorzes_megjegyzes').eq('szemelyid', id)),
     ]);
+    if (!S.mtNev) { try { const { data: mt } = await q(sb.from('tbl_munkatarsak').select('email,nev')); S.mtNev = new Map((mt || []).map(m => [m.email.toLowerCase(), m.nev])); } catch (e) { S.mtNev = new Map(); } }
     const tagja = new Set((tagsag || []).filter(t => t.elfogadott !== false).map(t => t.csoport_id));
     sorJavitasokAlkalmaz(P);
     const R = profilRender(P, id);
@@ -1204,7 +1205,8 @@ async function szemelyLap(id) {
         <p class="small">Csoport: ${(csop || []).map(c => S.szerkEz
           ? `<label class="csop-tag"><input type="checkbox" data-csop="${c.csoport_id}" ${tagja.has(c.csoport_id) ? 'checked' : ''}> ${esc(c.nev)}</label>`
           : (tagja.has(c.csoport_id) ? `<span class="badge b-info">${esc(c.nev)}</span>` : '')).join(' ') || '<span class="muted">—</span>'}
-          ${S.szerkEz ? '' : ' <span class="badge b-gray">csak olvasható számodra</span>'}</p></div>
+          ${S.szerkEz ? '' : ' <span class="badge b-gray">csak olvasható számodra</span>'}</p>
+        ${ellenorzesSav(id, csop, tagsag, P)}</div>
         <nav class="ugro">${R.tartalom.map(t => `<a href="#" data-ugro="${t[0]}">${esc(t[1])}</a>`).join('')}</nav></div>
       <div class="legend"><span>${forrasBadge('KIG-féle kutatás', 'KIG-féle kutatás')} KIG-féle kutatás</span><span>${forrasBadge('x', 'ElitData2026')} ElitData2026</span><span><span class="kod">kód N</span> a jelentése a KIG-kódkönyvből pótlandó</span></div>
       ${csoportSav(id)}
@@ -1221,6 +1223,12 @@ async function szemelyLap(id) {
       try { await q(sb.rpc('javitas_visszavon', { p_allitas_id: Number(b.dataset.visszavon) })); szemelyLap(id); } catch (err) { alert('Hiba: ' + hibaSzoveg(err)); }
     }));
     app.querySelectorAll('[data-ugro]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); $('#sz-' + a.dataset.ugro).scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
+    app.querySelectorAll('[data-ell]').forEach(b => b.addEventListener('click', async () => {
+      const megj = b.dataset.ell === 'kérdéses' ? prompt('Mi a kérdés / mit kell még megnézni?') : null;
+      if (b.dataset.ell === 'kérdéses' && megj === null) return;
+      try { await q(sb.rpc('csoport_ellenoriz', { p_csoport_id: Number(b.dataset.cs), p_szemelyid: id, p_allapot: b.dataset.ell, p_megjegyzes: megj || null })); szemelyLap(id); }
+      catch (err) { alert('Hiba: ' + hibaSzoveg(err)); }
+    }));
     app.querySelectorAll('[data-csop]').forEach(cb => cb.addEventListener('change', async () => {
       try { await q(sb.rpc('csoport_tag', { p_csoport_id: Number(cb.dataset.csop), p_szemelyid: id, p_be: cb.checked })); }
       catch (err) { cb.checked = !cb.checked; alert('Hiba: ' + hibaSzoveg(err)); }
@@ -1550,6 +1558,27 @@ async function csoportKarrier(c) {
     } catch (err) { btn.disabled = false; hibaKiir($('#ck-msg'), err); }
   });
   lista();
+}
+
+// a profil fejlécében: ki ellenőrizte és véglegesítette (csoportonként), és ki módosította utoljára
+function kiNev(email) { if (!email) return ''; const e = String(email).replace(/ .*$/, '').toLowerCase(); return (S.mtNev && S.mtNev.get(e)) || email; }
+function ellenorzesSav(id, csop, tagsag, P) {
+  const nevek = new Map((csop || []).map(c => [c.csoport_id, c.nev]));
+  const tagok = (tagsag || []).filter(t => t.elfogadott !== false && nevek.has(t.csoport_id));
+  const sorok = tagok.map(t => {
+    const allapot = t.ellenorzes === 'ellenőrizve' ? `<span class="badge b-ok">ellenőrizve, véglegesítve ✓</span>`
+      : t.ellenorzes === 'kérdéses' ? '<span class="badge b-bad">kérdéses</span>' : '<span class="badge b-gray">még nincs ellenőrizve</span>';
+    const ki = t.ellenorizte ? ` ${esc(kiNev(t.ellenorizte))}${t.ellenorzes_ideje ? ', ' + new Date(t.ellenorzes_ideje).toLocaleDateString('hu-HU') : ''}` : '';
+    const megj = t.ellenorzes_megjegyzes ? ` <span class="muted">– ${esc(t.ellenorzes_megjegyzes)}</span>` : '';
+    const gomb = S.szerkEz && t.ellenorzes !== 'ellenőrizve' ? ` <button class="btn small" data-ell="ellenőrizve" data-cs="${t.csoport_id}">Ellenőrizve ✓</button>` : '';
+    const gomb2 = S.szerkEz && t.ellenorzes !== 'kérdéses' ? ` <button class="btn small" data-ell="kérdéses" data-cs="${t.csoport_id}">Kérdéses</button>` : '';
+    return `<div>${esc(nevek.get(t.csoport_id))}: ${allapot}${ki}${megj}${gomb}${gomb2}</div>`;
+  });
+  const valt = [...(P.sorjavitasok || []).filter(j => j.szemelyid === id), ...(P.allitasok || [])]
+    .filter(j => j.rogzitette && j.rogzitve && !/^automatikus/.test(j.rogzitette)).sort((a, b) => new Date(b.rogzitve) - new Date(a.rogzitve));
+  const utolso = valt.length ? `<div class="muted">Utolsó javítás: ${esc(kiNev(valt[0].rogzitette))}, ${new Date(valt[0].rogzitve).toLocaleDateString('hu-HU')}</div>` : '';
+  if (!sorok.length && !utolso) return '';
+  return `<div class="small ell-sav" style="margin-top:4px"><b>Ellenőrzés:</b>${sorok.length ? sorok.join('') : ' <span class="muted">a személy egyik csoportnak sem tagja</span>'}${utolso}</div>`;
 }
 
 // a profil tetején: lépkedés a csoport tagjai között, ellenőrzés jelölése
