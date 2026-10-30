@@ -1611,11 +1611,11 @@ async function munkatarsakLap() {
   } catch (e) { hibaKiir(app, e); }
 }
 
-// ---------- Harmonizáció ----------
+// ---------- Keresés besorolás szerint (korábban: Harmonizáció) ----------
 async function harmLap() {
-  app.innerHTML = `<h2>Harmonizáció</h2>
-    <p class="muted">Áttekintő nézet: a kódolói besorolások karrierállomásonként, a beírt és az érvényes (egységesített) értékkel. Kattints egy sorra a részletekhez.</p>
-    <p class="msg info small">A döntésre váró értékeket a <a href="#" id="h-nyitott">Nyitott kérdések</a> fülön érdemes rendezni: ott minden érték egyszer szerepel, egy döntés az összes érintett sort rendezi, és onnan az egyes sorok is megnyithatók.</p>
+  app.innerHTML = `<h2>Keresés besorolás szerint</h2>
+    <p class="muted">Kereső: egy harmonizált érték (foglalkozás, Hivatás1, Hivatás2) összes előfordulása, akár egy forrásfájlra szűkítve – az elfogadott és a döntésre váró sorokkal együtt. Kattints egy sorra a részletekhez.</p>
+    <p class="msg info small">Ez nem munkafelület: a döntésre váró értékeket a <a href="#" id="h-nyitott">Nyitott kérdések</a> fülön rendezd, ott egy döntés az összes érintett sort rendezi.</p>
     <div class="toolbar">
       <select id="h-f"><option value="">Minden forrás</option></select>
       <input type="search" id="h-q" placeholder="Érték (pl. KÖZGAZDÁSZ)…">
