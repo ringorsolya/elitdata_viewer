@@ -623,7 +623,7 @@ async function kodtablak() {
 }
 // Vélelmezett vallás-kódok: a korábbi ElitData-profilfájl feloldása alapján, a KIG-kódkönyvvel még egyeztetendő.
 const SZEREP = { APA: 'apa', ANYA: 'anya', HAZASTARS_1: '1. házastárs', HAZASTARS_2: '2. házastárs', HAZASTARS_3: '3. házastárs' };
-const LAKAS = { helyszin: 'Helyszín (kód)', lakcim: 'Lakcím típusa (kód)', lakasbanevek: 'Lakásban töltött évek', budapestenevek: 'Budapesten töltött évek', lakber: 'Lakbér', utcaiszobak: 'Utcai szobák', udvariszobak: 'Udvari szobák', kertiszobak: 'Kerti szobák', hall: 'Hall', cseledszoba: 'Cselédszoba', cseledfulke: 'Cselédfülke', konyha: 'Konyha', teakonyha: 'Teakonyha', eloszoba: 'Előszoba', eleskamra: 'Éléskamra', feredo: 'Fürdőszoba', veranda: 'Veranda', muterem: 'Műterem', egyebhelyiseg: 'Egyéb helyiség', garage: 'Garázs', halofulke: 'Hálófülke', pince: 'Pince', padlas: 'Padlás', alberlo: 'Albérlő', vizvezetek: 'Vízvezeték', gazvezetek: 'Gázvezeték', villany: 'Villany', kozpontifutes: 'Központi fűtés', etagefutes: 'Etázsfűtés', gazfutes: 'Gázfűtés', villanyfutes: 'Villanyfűtés', melegviz: 'Melegvíz', telefon: 'Telefon', detektorradio: 'Detektoros rádió', lamparadio: 'Lámpás rádió', fozeshelyek: 'Főzőhelyek', furdeshelyek: 'Fürdőhelyek', wcszam: 'WC', nemwcszam: 'Nem vízöblítéses WC' };
+const LAKAS = { cim: 'Cím', megjegyzes: 'Megjegyzés', helyszin: 'Helyszín (kód)', lakcim: 'Lakcím típusa (kód)', lakasbanevek: 'Lakásban töltött évek', budapestenevek: 'Budapesten töltött évek', lakber: 'Lakbér', utcaiszobak: 'Utcai szobák', udvariszobak: 'Udvari szobák', kertiszobak: 'Kerti szobák', hall: 'Hall', cseledszoba: 'Cselédszoba', cseledfulke: 'Cselédfülke', konyha: 'Konyha', teakonyha: 'Teakonyha', eloszoba: 'Előszoba', eleskamra: 'Éléskamra', feredo: 'Fürdőszoba', veranda: 'Veranda', muterem: 'Műterem', egyebhelyiseg: 'Egyéb helyiség', garage: 'Garázs', halofulke: 'Hálófülke', pince: 'Pince', padlas: 'Padlás', alberlo: 'Albérlő', vizvezetek: 'Vízvezeték', gazvezetek: 'Gázvezeték', villany: 'Villany', kozpontifutes: 'Központi fűtés', etagefutes: 'Etázsfűtés', gazfutes: 'Gázfűtés', villanyfutes: 'Villanyfűtés', melegviz: 'Melegvíz', telefon: 'Telefon', detektorradio: 'Detektoros rádió', lamparadio: 'Lámpás rádió', fozeshelyek: 'Főzőhelyek', furdeshelyek: 'Fürdőhelyek', wcszam: 'WC', nemwcszam: 'Nem vízöblítéses WC' };
 const ZST = { zst_szul: 'Zsidónak minősült születése alapján', zst_fele: 'Felekezet alapján', zst_gyer: 'Gyermekei érintettek', zst_1in: '1. törvény: érintett', zst_1mi: '1. törvény: következmény / mentesítés', zst_1ev: '1. törvény: év', zst_1ho: '1. törvény: hónap', zst_2in: '2. törvény: érintett', zst_2mi: '2. törvény: következmény / mentesítés', zst_2ev: '2. törvény: év', zst_2ho: '2. törvény: hónap' };
 const PER_TIPUS = { BAJ: 'B-listázás / igazolás (1945–)', OSE: '1956 utáni eljárás' };
 
@@ -773,6 +773,7 @@ function profilRender(P, id) {
     { c: 'Világháború', k: 'vilaghaborukod' }, { c: 'Kategória', f: s => kod(s.kategoria) }, { c: 'Rendfokozat', f: s => kod(s.rendfokozat) },
     { c: 'Front (hónap)', f: s => [s.frontzaszlo1 !== null ? `${s.frontzaszlo1}${s.frontzaszlo1honap !== null ? ' (' + s.frontzaszlo1honap + ')' : ''}` : null, s.frontzaszlo2 !== null ? `${s.frontzaszlo2}${s.frontzaszlo2honap !== null ? ' (' + s.frontzaszlo2honap + ')' : ''}` : null].filter(Boolean).join('; ') || null },
     { c: 'Sebesülések', k: 'sebesulesekszama' }, { c: 'Vitéz', f: s => boolF(s.viteze) }, { c: 'Munkaszolgálat', f: s => boolF(s.munkaszolgalate) },
+    { c: 'Megjegyzés', k: 'megjegyzes', cls: 'small' },
   ]);
   const kulfold = tabla(P.kulfold, [{ c: 'Ország', f: s => helyF(s.orszagkod) }, { c: 'Időszak', f: s => (s.kezdoev === null && s.vegev === null) ? null : idoszak(s.kezdoev, s.vegev, szul) }]);
   const szerv = [
@@ -793,9 +794,10 @@ function profilRender(P, id) {
     P.zsidotorvenyek?.length ? '<h4>Zsidótörvények</h4>' + (P.zsidotorvenyek || []).map(s => kvBlokk(Object.entries(s).filter(([k, v]) => v !== null && k.startsWith('zst')).map(([k, v]) => kvSor(ZST[k] || k, k.endsWith('mi') && kt.zst.get(Number(v)) ? esc(kt.zst.get(Number(v))) : (k.endsWith('in') || k === 'zst_szul' || k === 'zst_fele' ? boolF(v) : esc(v)), s.forras_id)))).join('') : '',
   ].join('');
   const vagyon = [
-    P.vagyon?.length ? tabla(P.vagyon, [{ c: 'Év', k: 'ev' }, { c: 'Fizetés', k: 'fizetes' }, { c: 'Öröklés', k: 'orokles' }, { c: 'Háztartás', k: 'haztartas' }, { c: 'Igazgatósági tagság', k: 'igazgatosagitag' }, { c: 'Forgalmi adó (kórház)', k: 'forgotokkorhaz' }]) : '',
-    P.lakas?.length ? '<h4>Lakás (1942)</h4>' + (P.lakas || []).map(s => kvBlokk(Object.entries(s).filter(([k, v]) => v !== null && v !== 0 && !k.startsWith('_') && !['lakasid', 'szemelyid', 'forras_id', 'rogzitve', 'elfogadott', 'ev'].includes(k)).map(([k, v]) => kvSor(LAKAS[k] || k, esc(v), null)))).join('') : '',
-    P.haztartas?.length ? '<h4>Háztartás (1942)</h4>' + tabla(P.haztartas, [{ c: 'Jelenlévők', k: 'jelenlevokszama' }, { c: 'Távollévők', k: 'tavollevokszama' }, { c: 'Háztartási alkalmazott', k: 'haztartasialkalmazottak' }, { c: 'Gyerekek', k: 'gyerekek' }, { c: 'Más rokon', k: 'masrokon' }]) : '',
+    P.vagyon?.length ? tabla(P.vagyon, [{ c: 'Év', k: 'ev' }, { c: 'Fizetés + lakáspénz (havi)', k: 'fizetes' }, { c: 'Öröklakás értéke', k: 'orokles' }, { c: 'Háztulajdon', k: 'haztartas' },
+      { c: 'Földbirtok (aranykorona)', k: 'forgotokakademia' }, { c: 'Földbirtok (kat. hold)', k: 'forgotokkorhaz' }, { c: 'Adóalap', k: 'adoalap' }, { c: 'Banki, ipari érdekeltségek', k: 'igazgatosagitag' }, { c: 'Megjegyzés', k: 'megjegyzes', cls: 'small' }]) : '',
+    P.lakas?.length ? (P.lakas || []).map(s => `<h4>Lakás (${esc(s.ev || '')})</h4>` + kvBlokk(Object.entries(s).filter(([k, v]) => v !== null && v !== 0 && !k.startsWith('_') && !['lakasid', 'szemelyid', 'forras_id', 'rogzitve', 'elfogadott', 'ev'].includes(k)).map(([k, v]) => kvSor(LAKAS[k] || k, esc(v), null)))).join('') : '',
+    P.haztartas?.length ? '<h4>Háztartás (1942)</h4>' + tabla(P.haztartas, [{ c: 'Jelenlévők', k: 'jelenlevokszama' }, { c: 'Távollévők', k: 'tavollevokszama' }, { c: 'Háztartási alkalmazott', k: 'haztartasialkalmazottak' }, { c: 'Házastárs', k: 'hazastars' }, { c: 'Gyerekek', k: 'gyerekek' }, { c: 'Más rokon', k: 'masrokon' }, { c: 'Megjegyzés', k: 'megjegyzes', cls: 'small' }]) : '',
   ].join('');
   const nyit = P.nyitott || [];
   const db = a => (a && a.length) || 0;
@@ -992,8 +994,8 @@ const CIMKE = { ev: 'Év', sorszam: 'Sorszám', kituntetekod: 'Kitüntetés a k�
   munkatipuskod: 'Munkatípus (kód)', kezdoev: 'Kezdés éve', befejezesev: 'Befejezés éve', tanitasinyelv: 'Tanítási nyelv (kód)', szak: 'Szak',
   diplomaev: 'Diploma éve', diplomafajta: 'Diploma fajtája (kód)', vegev: 'Vége', vilaghaborukod: 'Világháború', kategoria: 'Kategória (kód)',
   rendfokozat: 'Rendfokozat (kód)', frontzaszlo1: 'Front 1', frontzaszlo1honap: 'Front 1 (hónap)', frontzaszlo2: 'Front 2', frontzaszlo2honap: 'Front 2 (hónap)',
-  sebesulesekszama: 'Sebesülések', viteze: 'Vitéz', munkaszolgalate: 'Munkaszolgálat', hadifoge: 'Hadifogság', fizetes: 'Fizetés', orokles: 'Öröklés',
-  haztartas: 'Háztartás', igazgatosagitag: 'Igazgatósági tagság', forgotokkorhaz: 'Forgalmi adó (kórház)', forgotokakademia: 'Forgalmi adó (akadémia)',
+  sebesulesekszama: 'Sebesülések', viteze: 'Vitéz', munkaszolgalate: 'Munkaszolgálat', hadifoge: 'Hadifogság', fizetes: 'Fizetés + lakáspénz (havi)', orokles: 'Öröklakás értéke',
+  haztartas: 'Háztulajdon', igazgatosagitag: 'Banki, ipari érdekeltségek száma', forgotokkorhaz: 'Földbirtok (kat. hold)', forgotokakademia: 'Földbirtok (aranykorona)', cim: 'Cím', megjegyzes: 'Megjegyzés',
   adoalap: 'Adóalap', jelenlevokszama: 'Jelenlévők', tavollevokszama: 'Távollévők', haztartasialkalmazottak: 'Háztartási alkalmazottak', gyerekek: 'Gyerekek',
   masrokon: 'Más rokon', hazastars: 'Házastárs', apa: 'Apa', anya: 'Anya', apos: 'Após', anyos: 'Anyós', nagyapa: 'Nagyapa', nagyanya: 'Nagyanya',
   elsoev: 'Első év', utolsoev: 'Utolsó év', foglalkozas: 'Foglalkozás', munkahely: 'Munkahely', helyszin: 'Helyszín', idopontkod: 'Mikor', leiras: 'Leírás',
