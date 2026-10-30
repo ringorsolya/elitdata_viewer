@@ -182,7 +182,7 @@ function valt(tab, render = true) {
   S.tab = tab;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   if (!render) return;
-  ({ nyitott: nyitottLap, javaslatok: javaslatokLap, szemelyek: szemelyekLap, harm: harmLap, szabalyok: szabalyokLap, naplo: naploLap, seged: segedLap, munkatarsak: munkatarsakLap, csoportok: csoportokLap })[tab]();
+  ({ nyitott: nyitottLap, javaslatok: javaslatokLap, szemelyek: szemelyekLap, harm: harmLap, szabalyok: szabalyokLap, naplo: naploLap, seged: segedLap, kodkonyv: kodkonyvLap, munkatarsak: munkatarsakLap, csoportok: csoportokLap })[tab]();
 }
 
 // ---------- Nyitott kérdések ----------
@@ -1918,6 +1918,74 @@ async function naploLap() {
     $('#n-list').innerHTML = data.length ? `<table><thead><tr><th>Időpont</th><th>Ki</th><th>Tábla</th><th>Változás</th></tr></thead><tbody>${
       data.map(r => `<tr><td class="small">${new Date(r.idopont).toLocaleString('hu-HU')}</td><td class="small">${esc(r.felhasznalo)}</td><td class="small">${esc(r.tabla)}</td><td class="small">${esc(valtozas(r))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Még nincs bejegyzés.</div>';
   } catch (e) { hibaKiir($('#n-list'), e); }
+}
+
+// ---------- Kódkönyvek ----------
+const KK_NEV = { foglalkozas: 'Foglalkozás (harmonizált)', hivatas1: 'Hivatás1', hivatas2: 'Hivatás2' };
+async function kodkonyvLap(kk = 'foglalkozas') {
+  app.innerHTML = `<h2>Kódkönyvek</h2>
+    <p class="muted">A harmonizált foglalkozás, a Hivatás1 és a Hivatás2 lehetséges értékei leírással, és hogy jelenleg hány karrierállomáson és személynél fordulnak elő.
+    Új értéket bárki felvehet, a leírás, a megjegyzés és az érvényesség módosítható. A már használt érték neve itt nem írható át – az adatok átírása a Szabályok fülön történik.</p>
+    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0">
+      ${Object.entries(KK_NEV).map(([k, n]) => `<button class="btn ${k === kk ? 'primary' : ''}" data-kk="${k}">${esc(n)}</button>`).join('')}
+      <input id="kk-szur" placeholder="Szűrés értékre vagy leírásra…" style="flex:1;min-width:200px">
+      <label class="small"><input type="checkbox" id="kk-erv"> csak az érvényesek</label>
+      <button class="btn" id="kk-csv">Letöltés (CSV)</button>
+    </div>
+    <div id="kk-list"><div class="empty">Betöltés…</div></div>
+    <div class="card" style="margin-top:14px"><h3 id="kk-cim">Új érték felvétele – ${esc(KK_NEV[kk])}</h3>
+    <form id="kk-f" class="form"><input type="hidden" id="kk-id">
+      <label>Érték<input id="kk-ertek" required></label>
+      <label>Leírás (meghatározás: mikor kell ezt az értéket adni)<textarea id="kk-megh" rows="3"></textarea></label>
+      <label>Megjegyzés<textarea id="kk-megj" rows="2"></textarea></label>
+      <div class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="kk-ervenyes" checked style="width:auto"><span>érvényes (adható érték)</span></div>
+      <div><button class="btn primary" type="submit">Mentés</button> <button class="btn hidden" type="button" id="kk-megse">Mégse</button></div>
+    </form><div id="kk-msg"></div></div>`;
+  let sorok = [];
+  app.querySelectorAll('[data-kk]').forEach(b => b.addEventListener('click', () => kodkonyvLap(b.dataset.kk)));
+  const urlap = r => {
+    $('#kk-id').value = r && r.id != null ? r.id : ''; $('#kk-ertek').value = r ? r.ertek : ''; $('#kk-megh').value = r ? (r.meghatarozas || '') : '';
+    $('#kk-megj').value = r && r.id != null ? (r.megjegyzes || '') : ''; $('#kk-ervenyes').checked = r ? r.ervenyes !== false : true;
+    $('#kk-cim').textContent = (r && r.id != null ? 'Érték szerkesztése' : 'Új érték felvétele') + ' – ' + KK_NEV[kk];
+    $('#kk-megse').classList.toggle('hidden', !r); $('#kk-msg').innerHTML = '';
+    if (r) $('#kk-f').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+  const rajzol = () => {
+    const sz = $('#kk-szur').value.trim().toLowerCase(), csakErv = $('#kk-erv').checked;
+    const l = sorok.filter(r => (!csakErv || r.ervenyes) && (!sz || [r.ertek, r.meghatarozas, r.megjegyzes].some(x => (x || '').toLowerCase().includes(sz))));
+    $('#kk-list').innerHTML = `<p class="small muted">${l.length} érték (összesen ${sorok.length}; érvényes: ${sorok.filter(r => r.ervenyes).length})</p>
+      <div class="tbl-wrap"><table><thead><tr><th>Érték</th><th>Leírás</th><th>Megjegyzés</th><th>Érvényes</th><th>Állomás</th><th>Személy</th><th>Módosította</th><th></th></tr></thead><tbody>${
+      l.map((r, i) => `<tr class="${r.ervenyes === false ? 'muted' : ''}"><td><b>${esc(r.ertek)}</b></td><td class="small">${esc(r.meghatarozas || '')}</td>
+        <td class="small">${esc([r.megjegyzes, r.javitando ? 'Korábbi jelölés: ' + r.javitando : null].filter(x => x).join(' · '))}</td>
+        <td>${r.id == null ? '<span class="badge" style="background:#f6e3c5;color:#7a4b00">nincs a kódkönyvben</span>' : r.ervenyes ? 'igen' : 'nem'}</td>
+        <td>${r.sorok}</td><td>${r.szemelyek}</td><td class="small">${esc(kiNev(r.modositotta) || '')}</td>
+        <td><button class="btn small" data-kk-sor="${sorok.indexOf(r)}">${r.id == null ? 'Felvétel' : 'Szerkesztés'}</button></td></tr>`).join('')}</tbody></table></div>`;
+  };
+  const lista = async () => {
+    try {
+      ({ data: sorok } = await q(sb.from('v_kodkonyv').select('*').eq('kodkonyv', kk).order('ertek')));
+      rajzol();
+    } catch (e) { hibaKiir($('#kk-list'), e); }
+  };
+  $('#kk-szur').addEventListener('input', rajzol); $('#kk-erv').addEventListener('change', rajzol);
+  $('#kk-list').addEventListener('click', e => { const b = e.target.closest('[data-kk-sor]'); if (b) urlap(sorok[Number(b.dataset.kkSor)]); });
+  $('#kk-megse').addEventListener('click', () => urlap(null));
+  $('#kk-csv').addEventListener('click', () => {
+    const cs = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const t = [['érték', 'leírás', 'megjegyzés', 'érvényes', 'állomások', 'személyek'].join(';'),
+      ...sorok.map(r => [r.ertek, r.meghatarozas, r.megjegyzes, r.id == null ? 'nincs a kódkönyvben' : r.ervenyes ? 'igen' : 'nem', r.sorok, r.szemelyek].map(cs).join(';'))].join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + t], { type: 'text/csv;charset=utf-8' }));
+    a.download = `kodkonyv_${kk}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  });
+  $('#kk-f').addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+      await q(sb.rpc('kodkonyv_ment', { p_kodkonyv: kk, p_id: $('#kk-id').value ? Number($('#kk-id').value) : null, p_ertek: $('#kk-ertek').value,
+        p_meghatarozas: $('#kk-megh').value, p_megjegyzes: $('#kk-megj').value, p_ervenyes: $('#kk-ervenyes').checked }));
+      urlap(null); msg($('#kk-msg'), 'Elmentve.', 'ok'); lista();
+    } catch (err) { hibaKiir($('#kk-msg'), err); }
+  });
+  lista();
 }
 
 // ---------- Segédadatbázisok ----------
