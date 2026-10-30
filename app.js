@@ -186,7 +186,7 @@ function valt(tab, render = true) {
 }
 
 // ---------- Nyitott kérdések ----------
-const TIPUSOK = ['szabálydöntés', 'ütközés', 'névrokon-keveredés', 'forrásegyeztetés', 'azonosító-eltérés', 'párosítatlan harmonizációs sor', 'feloldatlan évkód'];
+const TIPUSOK = ['szabálydöntés', 'ütközés', 'eltérő hivatás', 'névrokon-keveredés', 'forrásegyeztetés', 'azonosító-eltérés', 'párosítatlan harmonizációs sor', 'feloldatlan évkód', 'kódolói kérdés'];
 async function nyitottLap() {
   app.innerHTML = `<h2>Nyitott kérdések</h2>
     <p class="muted">Minden, ami döntésre vár: szabályok, ütközések, egyedi ellenőrzések. Egy döntés után a tétel eltűnik a listából.</p>
@@ -230,6 +230,40 @@ async function nyitottLap() {
   lista();
 }
 
+// egy személynél a Hivatás1 és a Hivatás2 nem változhat: az összes harmonizált sor egységesítése egy lépésben
+async function hivatasReszlet(id, d, utana) {
+  const [{ data: rows }, K, { data: sz }] = await Promise.all([
+    q(sb.from('v_karrier_reszletes').select('karrierid,elsoev,utolsoev,foglalkozas,munkahely,harmonizalt,hivatas1,hivatas2,harm_id,tevekenyseg').eq('szemelyid', id).not('harm_id', 'is', null)),
+    kodok(),
+    q(sb.from('tbl_szemelyek').select('vezeteknev,keresztnev,szuletesiev').eq('szemelyid', id).single()),
+  ]);
+  rows.sort((a, b) => (a.elsoev || 9999) - (b.elsoev || 9999));
+  const gyak = m => { const c = new Map(); rows.forEach(r => { const v = (r[m] || '').toUpperCase(); if (v) c.set(v, (c.get(v) || 0) + 1); }); return [...c.entries()].sort((a, b) => b[1] - a[1]); };
+  const g1 = gyak('hivatas1'), g2 = gyak('hivatas2');
+  const elso2 = (g2.find(([v]) => v !== 'NINCS') || g2[0] || ['NINCS'])[0];
+  const sel = (idv, lista, alap, extra) => { const opts = [...new Set([...extra, ...lista])]; return `<select id="${idv}">${opts.map(v => `<option ${v.toUpperCase() === String(alap).toUpperCase() ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>`; };
+  const szin = (v, g) => g.length > 1 ? `<b>${dash(v)}</b>` : dash(v);
+  d.innerHTML = `<div class="card"><h3><a href="#szemely=${id}" data-szem="${id}">${esc(sz.vezeteknev + ' ' + sz.keresztnev)}</a> <span class="muted small">${sz.szuletesiev ? ev(sz.szuletesiev) : ''}</span></h3>
+    <p class="small">A Hivatás1 (végzettség) és a Hivatás2 egy személynél a teljes karrier során ugyanaz. Itt eltérnek:</p>
+    <p class="small">${g1.length > 1 ? `<b>Hivatás1:</b> ${g1.map(([v, n]) => `${esc(v)} (${n})`).join('; ')}<br>` : ''}${g2.length > 1 ? `<b>Hivatás2:</b> ${g2.map(([v, n]) => `${esc(v)} (${n})`).join('; ')}` : ''}</p>
+    <div class="tbl-wrap"><table><thead><tr><th>Évek</th><th>Foglalkozás</th><th>Harmonizált</th><th>Hivatás1</th><th>Hivatás2</th></tr></thead><tbody>${rows.map(r => `<tr${r.tevekenyseg !== 'fizetett munka' ? ' class="muted"' : ''}>
+      <td class="small">${idoszak(r.elsoev, r.utolsoev, sz.szuletesiev)}</td><td class="small">${esc(r.foglalkozas || '')}${r.munkahely ? `<br><span class="muted">${esc(r.munkahely)}</span>` : ''}</td>
+      <td class="small">${dash(r.harmonizalt)}</td><td class="small">${szin(r.hivatas1, g1)}</td><td class="small">${szin(r.hivatas2, g2)}</td></tr>`).join('')}</tbody></table></div>
+    ${`<form class="form" id="hv-f"><h4 style="margin:10px 0 4px">Egységesítés az összes sorra (${rows.length})</h4>
+      <div class="szerk-racs"><label>Hivatás1${sel('hv-1', K.hivatas1, g1[0] ? g1[0][0] : '?', ['?'])}</label><label>Hivatás2${sel('hv-2', K.hivatas2, elso2, ['NINCS', '?'])}</label></div>
+      <label>Megjegyzés (nem kötelező)<input id="hv-m" placeholder="pl. a diploma alapján jogász; az újságírás nem második hivatás"></label>
+      <div class="toolbar"><button class="btn primary" type="submit">Egységesítés</button></div><div id="hv-msg"></div>
+      <p class="muted small">Egyedi döntésként kerül be minden sorba (a kódolói érték megmarad, visszakövethető). Előre kiválasztva: Hivatás1-nél a leggyakoribb érték, Hivatás2-nél a leggyakoribb NINCS-től eltérő érték – ellenőrizd.</p></form>`}</div>`;
+  szemLinkek(d);
+  $('#hv-f', d)?.addEventListener('submit', async e => {
+    e.preventDefault(); const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true;
+    try {
+      const { data: n } = await q(sb.rpc('hivatas_egysegesit', { p_szemelyid: id, p_hivatas1: $('#hv-1', d).value, p_hivatas2: $('#hv-2', d).value, p_megjegyzes: $('#hv-m', d).value || null }));
+      msg($('#hv-msg', d), `Egységesítve: ${n} sor.`, 'ok'); setTimeout(utana, 900);
+    } catch (err) { btn.disabled = false; hibaKiir($('#hv-msg', d), err); }
+  });
+}
+
 async function tetel(r, utana) {
   const d = $('#ny-detail') || $('#detail');
   d.innerHTML = '<div class="card empty">Betöltés…</div>';
@@ -237,6 +271,7 @@ async function tetel(r, utana) {
     if (r.tipus === 'szabálydöntés') return await szabalyReszlet(Number(r.rekord_id), d, utana);
     if (r.tipus === 'ütközés' || r.tipus === 'párosítatlan harmonizációs sor') return await harmReszlet(Number(r.rekord_id), d, utana);
     if (r.tipus === 'feloldatlan évkód') return await karrierSzerk(Number(r.rekord_id), d, utana);
+    if (r.tipus === 'eltérő hivatás') return await hivatasReszlet(Number(r.rekord_id), d, utana);
     return await ellenorzendoReszlet(Number(r.rekord_id), d, utana);
   } catch (e) { hibaKiir(d, e); }
 }
