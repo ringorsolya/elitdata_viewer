@@ -1916,7 +1916,7 @@ async function javaslatokLap() {
       const ny = data.filter(j => j.allapot === 'javaslat'), kesz = data.filter(j => j.allapot !== 'javaslat');
       const csop = new Map(); for (const j of ny) { const k = JTABLA[j.tabla] || j.tabla; if (!csop.has(k)) csop.set(k, []); csop.get(k).push(j); }
       const sor = j => `<div class="jv-sor">
-          ${dontHet ? `<input type="checkbox" class="jv-cb" value="${j.javaslat_id}" checked>` : ''}
+          ${dontHet ? `<input type="checkbox" class="jv-cb" value="${j.javaslat_id}">` : ''}
           <div class="jv-tart"><div>${JMUV[j.muvelet] || ''} ${esc(j.olvashato)}</div>
             ${j.muvelet === 'javit' ? `<div class="small"><span class="muted">jelenleg:</span> ${dash(jvErtek(j, j.jelenlegi))} → <b>${esc(jvErtek(j, j.javasolt) ?? '')}</b></div>` : ''}
             ${j.muvelet === 'uj' && j.ertekek ? `<div class="small muted">${esc(Object.entries(j.ertekek).filter(([, v]) => v !== null && v !== '').map(([k, v]) => `${cimke(k)}: ${jvErtek({ mezo: k }, v)}`).join(' · '))}</div>` : ''}
@@ -1931,13 +1931,16 @@ async function javaslatokLap() {
         ${ny.length ? [...csop.entries()].map(([k, js]) => `<h4>${esc(k)}</h4>${js.map(sor).join('')}`).join('') : '<p class="muted">Nincs nyitott javaslat.</p>'}
         ${ny.length && !dontHet ? '<p class="msg info small">Ez a személy nem a te csoportodba tartozik, ezért a javaslatairól nem dönthetsz (látni láthatod őket).</p>' : ''}
         ${ny.length && dontHet ? `<label>Megjegyzés (nem kötelező)<input id="jv-m" placeholder="pl. a lexikon szerint"></label>
-          <div class="toolbar"><button class="btn primary" id="jv-el">Kijelöltek elfogadása</button><button class="btn" id="jv-ut">Kijelöltek elutasítása</button>
-          <button class="btn small" id="jv-mind">Mind / egyik sem</button></div><div id="jv-msg"></div>` : ''}
+          <p class="small muted" style="margin:6px 0">Pipáld be egyenként azokat a javaslatokat, amelyekről döntesz – alapból egyik sincs kijelölve.</p>
+          <div class="toolbar"><button class="btn primary" id="jv-el" disabled>Kijelöltek elfogadása (0)</button><button class="btn" id="jv-ut" disabled>Kijelöltek elutasítása (0)</button></div><div id="jv-msg"></div>` : ''}
         ${kesz.length ? `<details style="margin-top:12px"><summary class="muted">Korábban eldöntött javaslatok (${kesz.length})</summary>${kesz.map(j => `<div class="small" style="margin:4px 0">${j.allapot === 'elfogadva' ? '<span class="badge b-ok">elfogadva</span>' : '<span class="badge b-gray">elutasítva</span>'} ${esc(j.olvashato)}${j.muvelet === 'javit' ? ` → <b>${esc(j.javasolt ?? '')}</b>` : ''}</div>`).join('')}</details>` : ''}
       </div>`;
       szemLinkek(d);
       if (!dontHet || !ny.length) return;
-      $('#jv-mind', d).addEventListener('click', () => { const cbs = [...d.querySelectorAll('.jv-cb')]; const all = cbs.every(c => c.checked); cbs.forEach(c => { c.checked = !all; }); });
+      const szamol = () => { const n = d.querySelectorAll('.jv-cb:checked').length;
+        $('#jv-el', d).textContent = `Kijelöltek elfogadása (${n})`; $('#jv-ut', d).textContent = `Kijelöltek elutasítása (${n})`;
+        $('#jv-el', d).disabled = $('#jv-ut', d).disabled = !n; };
+      d.querySelectorAll('.jv-cb').forEach(c => c.addEventListener('change', szamol));
       const dont = async elfogad => {
         const ids = [...d.querySelectorAll('.jv-cb:checked')].map(c => Number(c.value));
         if (!ids.length) return msg($('#jv-msg', d), 'Nincs kijelölt javaslat.', 'err');
@@ -1946,7 +1949,7 @@ async function javaslatokLap() {
           const { data: n } = await q(sb.rpc('javaslat_dont', { p_ids: ids, p_elfogad: elfogad, p_megjegyzes: $('#jv-m', d).value || null }));
           await reszlet(id, `${n} javaslat ${elfogad ? 'elfogadva – az adatlapon már az új értékek látszanak' : 'elutasítva'}.`);
           lista();
-        } catch (e) { d.querySelectorAll('button').forEach(b => { b.disabled = false; }); hibaKiir($('#jv-msg', d), e); }
+        } catch (e) { d.querySelectorAll('button').forEach(b => { b.disabled = false; }); szamol(); hibaKiir($('#jv-msg', d), e); }
       };
       $('#jv-el', d).addEventListener('click', () => dont(true));
       $('#jv-ut', d).addEventListener('click', () => dont(false));
