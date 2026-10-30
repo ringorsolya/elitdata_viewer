@@ -703,7 +703,9 @@ function profilRender(P, id) {
     { c: 'Házasságból', f: s => s.hazassagbol ? esc(s.hazassagbol) + '.' : null },
     { c: 'Foglalkozás', f: s => (s.foglalkozasok || []).map(f => `${esc(f.foglalkozas)} <span class="muted small">(${esc((f.mikor || '').replace(' foglalkozás', ''))})</span>${javJel(f)}`).join('; ') || null, cls: 'small' },
   ]);
+  const szabadNev = n => `${esc(n)} <span class="badge b-warn" title="Nincs a kódlistán; szabad szöveggel rögzítve">nincs a listán</span>`;
   const kitKulfNev = s => {
+    if ((s.kituntetekod === null || s.kituntetekod === undefined || s.kituntetekod === '') && s.kituntetes_nev) return szabadNev(s.kituntetes_nev);
     // a „K2”/„K3” jelű sorok kódja nem külföldi kitüntetés, hanem a 2. (1946–49) ill. 3. (1949 utáni) hazai kódlista eleme
     const ln = { K2: 2, K3: 3 }[String(s.lista || '').trim().toUpperCase()];
     if (ln) { const n = kt.kitLista[ln]?.get(Number(s.kituntetekod)); return n ? esc(n) : kod(s.kituntetekod); }
@@ -713,7 +715,7 @@ function profilRender(P, id) {
   };
   const kituntetes = [
     P.kituntetes_hazai?.length ? '<h4>Hazai kitüntetések</h4>' + tabla(P.kituntetes_hazai, [
-      { c: 'Kitüntetés', f: s => kt.kitHazai.get(Number(s.kituntetekod)) ? esc(kt.kitHazai.get(Number(s.kituntetekod))) : kod(s.kituntetekod) }, { c: 'Év', f: s => evF(s.ev) }]) : '',
+      { c: 'Kitüntetés', f: s => kt.kitHazai.get(Number(s.kituntetekod)) ? esc(kt.kitHazai.get(Number(s.kituntetekod))) : (s.kituntetekod == null && s.kituntetes_nev ? szabadNev(s.kituntetes_nev) : kod(s.kituntetekod)) }, { c: 'Év', f: s => evF(s.ev) }]) : '',
     ...(() => {
       const K = P.kituntetes_kulfoldi || [], uj = K.filter(s => /^K[23]$/i.test(String(s.lista || '').trim())), kulf = K.filter(s => !uj.includes(s));
       const LN = { K2: '2. lista (1946–1949)', K3: '3. lista (1949 után)' };
@@ -726,7 +728,7 @@ function profilRender(P, id) {
     P.csapat_ermek?.length ? '<h4>Címek (állami és egyházi)</h4>' + tabla(P.csapat_ermek, [
       { c: 'Típus', f: s => esc({ CA: 'állami cím', CE: 'egyházi cím' }[s.tipus] || s.tipus) },
       // CA = 4. kódlista (állami címek), CE = 5. kódlista (egyházi címek); a listán túli kódok jelentése a kódkönyvből pótlandó
-      { c: 'Cím', f: s => { const n = kt.kitLista[{ CA: 4, CE: 5 }[s.tipus]]?.get(Number(s.kituntetekod)); return n ? esc(n) : kod(s.kituntetekod); } },
+      { c: 'Cím', f: s => { const n = kt.kitLista[{ CA: 4, CE: 5 }[s.tipus]]?.get(Number(s.kituntetekod)); return n ? esc(n) : (s.kituntetekod == null && s.kituntetes_nev ? szabadNev(s.kituntetes_nev) : kod(s.kituntetekod)); } },
       { c: 'Év', f: s => evF(s.ev) }]) : '',
     P.dijak?.length ? '<h4>Díjak</h4>' + tabla(P.dijak, [{ c: 'Díj', k: 'dijaknev' }, { c: 'Adományozó', k: 'dijakkod' }, { c: 'Helyszín', f: s => helyF(s.helyszinkod) }, { c: 'Év', f: s => evF(s.ev) }]) : '',
     P.diszdoktoratus?.length ? '<h4>Díszdoktorátus</h4>' + tabla(P.diszdoktoratus, [{ c: 'Egyetem', k: 'egyetemkod' }, { c: 'Helyszín', f: s => helyF(s.helyszinkod) }, { c: 'Év', f: s => evF(s.ev) }]) : '',
@@ -945,7 +947,7 @@ const SZAKASZ_SZERK = {
   foglalkozasok: { listak: ['foglalkozasok'] },
 };
 const KARRIER_OSZL = ['elsoev', 'utolsoev', 'foglalkozas', 'munkahely', 'helyszin'];
-const CIMKE = { ev: 'Év', sorszam: 'Sorszám', kituntetekod: 'Kitüntetés (kód)', orszagkod: 'Ország', helyszinkod: 'Helyszín', lista: 'Lista', tipus: 'Típus',
+const CIMKE = { ev: 'Év', sorszam: 'Sorszám', kituntetekod: 'Kitüntetés a kódlistáról', kituntetes_nev: 'Vagy: a kitüntetés neve (ha nincs a listán)', orszagkod: 'Ország', helyszinkod: 'Helyszín', lista: 'Fajta', tipus: 'Típus',
   dijakkod: 'Adományozó', dijaknev: 'Díj neve', egyetemkod: 'Egyetem', szervezetnev: 'Szervezet', belepesev: 'Belépés éve', alhelyszin: 'Alhelyszín (kód)',
   partkod: 'Párt', tol: 'Tól', ig: 'Ig', thb_yn: 'Tag', jelkod: 'Pozíció (kód)', bizottsagkod: 'Bizottság (kód)', szerep: 'Szerep', ertek: 'Érték',
   tipuskod: 'Eljárás típusa', ugycod: 'Ügy (kód)', ho: 'Hónap', jelenlegivallas: 'Felekezet', vallasvaltoztatassorszam: 'Áttérés sorszáma',
@@ -969,6 +971,8 @@ function mezoTipus(tabla, m) {
   if (m === 'partkod') return 'part';
   if (['jelenlegivallas', 'regivallas', 'ujvallas'].includes(m)) return 'vallas';
   if (tabla === 'tbl_kituntetes_hazai' && m === 'kituntetekod') return 'kithazai';
+  if (tabla === 'tbl_kituntetes_kulfoldi' && m === 'lista') return 'kitlista';
+  if (tabla === 'tbl_csapat_ermek' && m === 'tipus') return 'cimtipus';
   if (tabla === 'tbl_tanulmanyok' && m === 'diplomafajta') return 'diploma';
   if (m === 'iskolatipus') return 'iskolatipus';
   if (m === 'egyetemid') return 'egyetem';
@@ -1029,6 +1033,8 @@ function bevitel(tip, v, szul) {
   if (tip === 'hely') return opt([...kt.hely.entries()].sort((a, b) => a[1].localeCompare(b[1], 'hu')));
   if (tip === 'part') return opt([...kt.part.entries()]);
   if (tip === 'kithazai') return opt([...kt.kitHazai.entries()]);
+  if (tip === 'kitlista') return opt([['KK', 'külföldi kitüntetés'], ['K2', 'hazai, 1946–1949 (2. lista)'], ['K3', 'hazai, 1949 után (3. lista)']]);
+  if (tip === 'cimtipus') return opt([['CA', 'állami cím'], ['CE', 'egyházi cím']]);
   if (tip === 'diploma') return opt([...kt.diploma.values()].map(d => [d.kodertek, `${d.kodertek} – ${d.nev}`]));
   if (tip === 'vallas') return opt([...kt.vallas.values()].map(c => [c.kodertek, c.nev + (c.statusz === 'következtetett' ? ' (?)' : '')]));
   if (tip === 'iskolatipus') return opt([['altalanos', 'alapfok'], ['kozep', 'középfok'], ['felso', 'felsőfok']]);
@@ -1058,8 +1064,23 @@ function sorKartya(tabla, oszl, row, szul, opts = {}) {
     <div class="sor-lab">${uj ? '<button type="button" class="btn small" data-elvet>Mégse</button>' : '<label class="torles"><input type="checkbox" data-torles> Sor törlése</label>'}</div>
   </div>`;
 }
+// kitüntetéseknél csak a lényeges mezők, ésszerű sorrendben; a sorszám automatikus
+const KIT_OSZL = {
+  tbl_kituntetes_hazai: ['kituntetekod', 'kituntetes_nev', 'ev'],
+  tbl_kituntetes_kulfoldi: ['lista', 'orszagkod', 'kituntetekod', 'kituntetes_nev', 'ev'],
+  tbl_csapat_ermek: ['tipus', 'kituntetekod', 'kituntetes_nev', 'ev'],
+  tbl_dijak: ['dijaknev', 'dijakkod', 'helyszinkod', 'ev'],
+  tbl_diszdoktoratus: ['egyetemkod', 'helyszinkod', 'ev'],
+  tbl_akad_kituntetesek: ['szervezetnev', 'orszagkod', 'kituntetekod', 'ev'],
+};
+// új sornál ezek közül legalább egyet ki kell tölteni
+const KIT_KELL = {
+  tbl_kituntetes_hazai: ['kituntetekod', 'kituntetes_nev'], tbl_kituntetes_kulfoldi: ['kituntetekod', 'kituntetes_nev'],
+  tbl_csapat_ermek: ['kituntetekod', 'kituntetes_nev'], tbl_dijak: ['dijaknev', 'dijakkod'], tbl_diszdoktoratus: ['egyetemkod'], tbl_akad_kituntetesek: ['szervezetnev'],
+};
 function oszlopok(tabla) {
   if (tabla === 'tbl_karrier') return KARRIER_OSZL;
+  if (KIT_OSZL[tabla]) { const van = new Set((S.kt.oszlopok[tabla] || []).map(o => o.oszlop)); return KIT_OSZL[tabla].filter(m => van.has(m)); }
   return (S.kt.oszlopok[tabla] || []).map(o => o.oszlop);
 }
 async function szakaszSzerk(P, id, k) {
@@ -1087,6 +1108,7 @@ async function szakaszSzerk(P, id, k) {
       <div class="sor-lab"><label class="torles"><input type="checkbox" data-torles> Rokoni kapcsolat törlése</label></div></div>`).join('') + '</div>'
       + '<button type="button" class="btn" data-uj-rokon>+ Új rokon</button>';
   }
+  if (k === 'kituntetes') h += '<p class="msg info small">Új kitüntetésnél elég magát a kitüntetést megadni: a kódlistáról, vagy ha nincs rajta, a nevével. Az év és a többi mező nem kötelező, a sorszám automatikus. A forrást a lap alján kell megadni.</p>';
   for (const key of def.listak) {
     const [tabla, cim] = LISTA[key], oszl = oszlopok(tabla);
     h += `<h4>${esc(cim)}</h4><div data-lista="${key}">${(P[key] || []).map(row => sorKartya(tabla, oszl, row, szul, { szemely: id, javitasok: jOf(tabla, row[pk(tabla)]) })).join('') || '<p class="muted small">Nincs sor.</p>'}</div>
@@ -1156,6 +1178,12 @@ async function szakaszSzerk(P, id, k) {
         if (c.classList.contains('uj')) {
           const o = ertekek(c, false); Object.keys(o).forEach(m => { if (!o[m]) delete o[m]; });
           if (tabla === 'tbl_foglalkozasok' && o.foglalkozas && !o.idopontkod) o.idopontkod = 'alap';
+          if (KIT_KELL[tabla] && Object.keys(o).length) {
+            if (!KIT_KELL[tabla].some(m => o[m])) throw new Error(`Új sor (${(Object.values(LISTA).find(l => l[0] === tabla) || [, tabla])[1]}): add meg, mi a kitüntetés – a kódlistáról vagy a nevével.`);
+            const key = Object.keys(LISTA).find(x => LISTA[x][0] === tabla);
+            const max = Math.max(0, ...(P[key] || []).map(r => Number(r.sorszam) || 0), ...[...f.querySelectorAll('.sor-kartya.uj[data-tabla="' + tabla + '"]')].map(x => Number(x.dataset.sorszam) || 0));
+            c.dataset.sorszam = max + 1; o.sorszam = String(max + 1);
+          }
           if (Object.keys(o).length) muveletek.push(['sor_uj', { p_tabla: tabla, p_szemelyid: Number(c.dataset.szemely), p_ertekek: o }]);
           return;
         }
