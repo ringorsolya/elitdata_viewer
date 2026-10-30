@@ -182,7 +182,7 @@ function valt(tab, render = true) {
   S.tab = tab;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   if (!render) return;
-  ({ nyitott: nyitottLap, javaslatok: javaslatokLap, szemelyek: szemelyekLap, harm: harmLap, szabalyok: szabalyokLap, naplo: naploLap, munkatarsak: munkatarsakLap, csoportok: csoportokLap })[tab]();
+  ({ nyitott: nyitottLap, javaslatok: javaslatokLap, szemelyek: szemelyekLap, harm: harmLap, szabalyok: szabalyokLap, naplo: naploLap, seged: segedLap, munkatarsak: munkatarsakLap, csoportok: csoportokLap })[tab]();
 }
 
 // ---------- Nyitott kérdések ----------
@@ -1918,6 +1918,57 @@ async function naploLap() {
     $('#n-list').innerHTML = data.length ? `<table><thead><tr><th>Időpont</th><th>Ki</th><th>Tábla</th><th>Változás</th></tr></thead><tbody>${
       data.map(r => `<tr><td class="small">${new Date(r.idopont).toLocaleString('hu-HU')}</td><td class="small">${esc(r.felhasznalo)}</td><td class="small">${esc(r.tabla)}</td><td class="small">${esc(valtozas(r))}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Még nincs bejegyzés.</div>';
   } catch (e) { hibaKiir($('#n-list'), e); }
+}
+
+// ---------- Segédadatbázisok ----------
+async function segedLap() {
+  app.innerHTML = `<h2>Segédadatbázisok</h2><p class="muted">A kutatáshoz hasznos külső felületek. Bárki felvehet újat, javíthatja vagy törölheti a meglévőket.</p>
+    <div id="sg-list"><div class="empty">Betöltés…</div></div>
+    <div class="card" style="margin-top:14px"><h3 id="sg-cim">Új felület felvétele</h3>
+    <form id="sg-f" class="form"><input type="hidden" id="sg-id">
+      <label>Név<input id="sg-nev" required></label>
+      <label>Link<input id="sg-url" type="url" required placeholder="https://…"></label>
+      <label>Leírás (mit tartalmaz, mire jó)<textarea id="sg-leiras" rows="3"></textarea></label>
+      <div><button class="btn primary" type="submit">Mentés</button> <button class="btn hidden" type="button" id="sg-megse">Mégse</button></div>
+    </form><div id="sg-msg"></div></div>`;
+  let sorok = [];
+  const urlap = r => {
+    $('#sg-id').value = r ? r.id : ''; $('#sg-nev').value = r ? r.nev : ''; $('#sg-url').value = r ? r.url : ''; $('#sg-leiras').value = r ? (r.leiras || '') : '';
+    $('#sg-cim').textContent = r ? 'Felület szerkesztése' : 'Új felület felvétele'; $('#sg-megse').classList.toggle('hidden', !r);
+    if (r) $('#sg-f').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+  const lista = async () => {
+    try {
+      ({ data: sorok } = await q(sb.from('tbl_segedadatbazisok').select('*').order('sorrend', { nullsFirst: false }).order('id')));
+      $('#sg-list').innerHTML = sorok.length ? `<div class="tbl-wrap"><table><thead><tr><th>Név</th><th>Leírás</th><th>Felvette</th><th></th></tr></thead><tbody>${
+        sorok.map(r => `<tr><td><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer"><b>${esc(r.nev)}</b></a><div class="muted small" style="word-break:break-all">${esc(r.url)}</div></td>
+          <td class="small">${esc(r.leiras || '')}</td><td class="small">${esc(kiNev(r.rogzitette))}</td>
+          <td style="white-space:nowrap"><button class="btn small" data-sg-szerk="${r.id}">Szerkesztés</button> <button class="btn small" data-sg-torol="${r.id}">Törlés</button></td></tr>`).join('')}</tbody></table></div>`
+        : '<div class="empty">Még nincs felvett felület.</div>';
+    } catch (e) { hibaKiir($('#sg-list'), e); }
+  };
+  $('#sg-list').addEventListener('click', async e => {
+    const sz = e.target.closest('[data-sg-szerk]'), t = e.target.closest('[data-sg-torol]');
+    if (sz) urlap(sorok.find(r => r.id === Number(sz.dataset.sgSzerk)));
+    if (t) {
+      const r = sorok.find(x => x.id === Number(t.dataset.sgTorol));
+      if (!confirm(`Biztosan törlöd: ${r.nev}?`)) return;
+      try { await q(sb.from('tbl_segedadatbazisok').delete().eq('id', r.id)); lista(); } catch (err) { alert('Hiba: ' + hibaSzoveg(err)); }
+    }
+  });
+  $('#sg-megse').addEventListener('click', () => urlap(null));
+  $('#sg-f').addEventListener('submit', async e => {
+    e.preventDefault();
+    const rec = { nev: $('#sg-nev').value.trim(), url: $('#sg-url').value.trim(), leiras: $('#sg-leiras').value.trim() || null };
+    if (!/^https?:\/\//i.test(rec.url)) { msg($('#sg-msg'), 'A link http:// vagy https:// kezdetű legyen.', 'err'); return; }
+    try {
+      const id = $('#sg-id').value;
+      if (id) await q(sb.from('tbl_segedadatbazisok').update(rec).eq('id', Number(id)));
+      else await q(sb.from('tbl_segedadatbazisok').insert({ ...rec, sorrend: Math.max(0, ...sorok.map(r => r.sorrend || 0)) + 1 }));
+      msg($('#sg-msg'), 'Elmentve.', 'ok'); urlap(null); lista();
+    } catch (err) { hibaKiir($('#sg-msg'), err); }
+  });
+  lista();
 }
 
 init();
