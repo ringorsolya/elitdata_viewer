@@ -186,7 +186,7 @@ function valt(tab, render = true) {
 }
 
 // ---------- Nyitott kérdések ----------
-const TIPUSOK = ['szabálydöntés', 'ütközés', 'eltérő hivatás', 'névrokon-keveredés', 'forrásegyeztetés', 'azonosító-eltérés', 'párosítatlan harmonizációs sor', 'feloldatlan évkód', 'kódolói kérdés'];
+const TIPUSOK = ['szabálydöntés', 'ütközés', 'eltérő hivatás', 'névrokon-keveredés', 'forrásegyeztetés', 'azonosító-eltérés', 'párosítatlan harmonizációs sor', 'feloldatlan évkód', 'kódolói kérdés', 'besorolatlan állomás'];
 async function nyitottLap() {
   app.innerHTML = `<h2>Nyitott kérdések</h2>
     <p class="muted">Minden, ami döntésre vár: szabályok, ütközések, egyedi ellenőrzések. Egy döntés után a tétel eltűnik a listából.</p>
@@ -272,8 +272,41 @@ async function tetel(r, utana) {
     if (r.tipus === 'ütközés' || r.tipus === 'párosítatlan harmonizációs sor') return await harmReszlet(Number(r.rekord_id), d, utana);
     if (r.tipus === 'feloldatlan évkód') return await karrierSzerk(Number(r.rekord_id), d, utana);
     if (r.tipus === 'eltérő hivatás') return await hivatasReszlet(Number(r.rekord_id), d, utana);
+    if (r.tipus === 'besorolatlan állomás') return await besorolatlanReszlet(Number(r.rekord_id), d, utana);
     return await ellenorzendoReszlet(Number(r.rekord_id), d, utana);
   } catch (e) { hibaKiir(d, e); }
+}
+// egy személy besorolatlan karrierállomásai: az automatikus javaslatok egyenként elfogadhatók, a többi kézzel sorolható be
+async function besorolatlanReszlet(szemelyid, d, utana) {
+  const [{ data: k }, { data: jv }, { data: sz }] = await Promise.all([
+    q(sb.from('v_karrier_reszletes').select('karrierid,elsoev,utolsoev,foglalkozas,munkahely,helyszin,forras,fazis,harm_id,tevekenyseg').eq('szemelyid', szemelyid).is('harm_id', null).order('elsoev', { nullsFirst: false })),
+    q(sb.from('tbl_javaslatok').select('javaslat_id,rekord_id,javasolt,ertekek,megjegyzes').eq('szemelyid', szemelyid).eq('muvelet', 'besorol').eq('allapot', 'javaslat')),
+    q(sb.from('tbl_szemelyek').select('vezeteknev,keresztnev,szuletesiev').eq('szemelyid', szemelyid).single())]);
+  const sorok = (k || []).filter(x => x.tevekenyseg !== 'egyesületi és egyéb');
+  const jm = new Map((jv || []).map(j => [j.rekord_id, j]));
+  d.innerHTML = `<div class="card"><h3 style="margin-top:0"><a href="#szemely=${szemelyid}" data-szem="${szemelyid}">${esc(sz.vezeteknev + ' ' + sz.keresztnev)}</a> <span class="muted small">${esc(sz.szuletesiev || '')}</span></h3>
+    <p class="small muted">Harmonizálatlan karrierállomások. Ahol van automatikus javaslat, pipáld be egyenként, amelyiket elfogadod (alapból egyik sincs kijelölve). A többit a „Besorolás” gombbal sorolhatod be.</p>
+    ${sorok.length ? `<div class="tbl-wrap"><table><thead><tr><th></th><th>Időszak</th><th>Foglalkozás</th><th>Munkahely</th><th>Javaslat</th><th></th></tr></thead><tbody>${sorok.map(x => { const j = jm.get(x.karrierid);
+      return `<tr><td>${j ? `<input type="checkbox" class="bj-cb" value="${j.javaslat_id}">` : ''}</td><td>${idoszak(x.elsoev, x.utolsoev)}</td><td>${dash(x.foglalkozas)}</td><td class="small">${dash(x.munkahely)}</td>
+        <td>${j ? `<b>${esc(j.javasolt)}</b><div class="small muted">Hivatás1: ${esc(j.ertekek?.hivatas1 || '')} · Hivatás2: ${esc(j.ertekek?.hivatas2 || '')}</div><div class="small muted">${esc(j.megjegyzes || '')}</div>` : '<span class="muted small">nincs javaslat</span>'}</td>
+        <td><button class="btn small" data-bk="${x.karrierid}">Besorolás</button></td></tr>`; }).join('')}</tbody></table></div>
+      ${jm.size ? `<div class="toolbar"><button class="btn primary" id="bj-el" disabled>Kijelölt javaslatok elfogadása (0)</button><button class="btn" id="bj-ut" disabled>Kijelöltek elutasítása (0)</button></div>` : ''}<div id="bj-msg"></div>`
+      : '<p class="muted">Nincs már besorolatlan állomás.</p>'}
+    <div id="bj-det" style="margin-top:10px"></div></div>`;
+  szemLinkek(d);
+  const szamol = () => { const n = d.querySelectorAll('.bj-cb:checked').length; const el = $('#bj-el', d), ut = $('#bj-ut', d); if (!el) return;
+    el.textContent = `Kijelölt javaslatok elfogadása (${n})`; ut.textContent = `Kijelöltek elutasítása (${n})`; el.disabled = ut.disabled = !n; };
+  d.querySelectorAll('.bj-cb').forEach(c => c.addEventListener('change', szamol));
+  const dont = async elfogad => {
+    const ids = [...d.querySelectorAll('.bj-cb:checked')].map(c => Number(c.value)); if (!ids.length) return;
+    d.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    try { const { data: n } = await q(sb.rpc('javaslat_dont', { p_ids: ids, p_elfogad: elfogad, p_megjegyzes: null }));
+      msg($('#bj-msg', d), `${n} javaslat ${elfogad ? 'elfogadva' : 'elutasítva'}.`, 'ok'); setTimeout(() => besorolatlanReszlet(szemelyid, d, utana), 700);
+    } catch (e) { d.querySelectorAll('button').forEach(b => { b.disabled = false; }); szamol(); hibaKiir($('#bj-msg', d), e); }
+  };
+  $('#bj-el', d)?.addEventListener('click', () => dont(true));
+  $('#bj-ut', d)?.addEventListener('click', () => dont(false));
+  d.querySelectorAll('[data-bk]').forEach(b => b.addEventListener('click', () => karrierSzerk(Number(b.dataset.bk), $('#bj-det', d), () => besorolatlanReszlet(szemelyid, d, utana))));
 }
 async function szerkHet(szemelyid) {
   if (!szemelyid) return true; // minden munkatárs mindent javíthat
@@ -1877,7 +1910,7 @@ async function harmLap() {
 const JTABLA = { tbl_szemelyek: 'Alapadatok', tbl_elittag_reszletek: 'Életrajzi részletek', tbl_tanulmanyok: 'Tanulmányok', tbl_karrier: 'Karrier',
   tbl_kituntetes_hazai: 'Kitüntetések', tbl_kituntetes_kulfoldi: 'Kitüntetések (1945 után / külföldi)', tbl_dijak: 'Díjak', tbl_csapat_ermek: 'Címek',
   tbl_szervezeti_tagsag_belfold: 'Szervezeti tagság', tbl_kulfolditartozkodasok: 'Külföldi tartózkodás', tbl_foglalkozasok: 'Foglalkozás' };
-const JMUV = { javit: '<span class="badge b-warn">javítás</span>', uj: '<span class="badge b-info">új adat</span>', megerosit: '<span class="badge b-ok">megerősítés</span>' };
+const JMUV = { besorol: '<span class="badge b-info">besorolás</span>', javit: '<span class="badge b-warn">javítás</span>', uj: '<span class="badge b-info">új adat</span>', megerosit: '<span class="badge b-ok">megerősítés</span>' };
 function jvErtek(j, v) {
   if (v === null || v === undefined || v === '') return v;
   if (['szuletesiev', 'ev', 'nevvaltoztataseve', 'diplomaev', 'kezdoev', 'befejezesev'].includes(j.mezo)) return String(ev(v));
