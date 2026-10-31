@@ -726,7 +726,7 @@ function profilRender(P, id) {
   const karrier = karrierMunka.length ? `<div class="tbl-wrap"><p class="small muted" style="margin:0 0 6px">A sor elején lévő <b>→ egyéb</b> gombbal helyezhetsz át egy nem fizetett tevékenységet (egyesületi tisztség, igazgatósági tagság stb.) az „Egyesületi és egyéb tevékenység” blokkba.</p><table id="kar-tbl"><thead><tr><th></th><th>Időszak</th><th>Foglalkozás</th><th>Munkahely</th><th>Helyszín</th><th>Forrás</th><th>Harmonizált</th><th>Hivatás1</th><th>Hivatás2</th><th>Specifikáció</th><th>Harm. forrás</th><th>Állapot</th><th></th></tr></thead><tbody>${
     karrierMunka.map(k => { const jm = k.javitott_mezok || [], jv = m => jm.includes(m) ? ` <span class="muted small" title="Javított érték; eredetileg: ${esc(k.eredeti?.[m] ?? '—')}">*</span>` : '';
       const evJav = jm.includes('elsoev') || jm.includes('utolsoev');
-      return `<tr ${k.harm_id ? `class="click" data-h="${k.harm_id}"` : ''}><td style="white-space:nowrap">${tevGomb(k, EGYEB)}</td><td>${idoszak(k.elsoev, k.utolsoev)}${evJav ? jv(jm.includes('elsoev') ? 'elsoev' : 'utolsoev') : (k.leiras && k.leiras.startsWith('? kód') ? ` <span class="badge b-warn">${esc(k.leiras)}</span>` : '')}</td>
+      return `<tr ${k.harm_id ? `class="click" data-h="${k.harm_id}"` : ''}><td style="white-space:nowrap">${tevGomb(k, EGYEB)}</td><td>${idoszak(k.elsoev, k.utolsoev)}${bizJel(k)}${evJav ? jv(jm.includes('elsoev') ? 'elsoev' : 'utolsoev') : (k.leiras && k.leiras.startsWith('? kód') ? ` <span class="badge b-warn">${esc(k.leiras)}</span>` : '')}</td>
       <td>${dash(k.foglalkozas)}${jv('foglalkozas')}</td><td class="small">${dash(k.munkahely)}${jv('munkahely')}</td><td class="small">${dash(k.helyszin)}${jv('helyszin')}</td><td>${forrasBadge(k.forras, k.fazis)}</td>
       ${k.harm_id ? `<td>${harmF(k, 'harmonizalt')}</td><td>${harmF(k, 'hivatas1')}</td><td>${harmF(k, 'hivatas2')}</td><td class="small">${esc(k.specifikacio || '')}</td>
       <td>${forrasBadge(k.harm_forras || 'ElitData2026', 'ElitData2026')}</td><td>${allapotBadge(k.harm_allapot)}</td>` : NEMHARM(6)}<td style="white-space:nowrap"><button class="btn small" data-kj="${k.karrierid}">${S.szerkEz ? 'Javítás' : 'Besorolás'}</button></td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nincs karrieradat.</p>';
@@ -1430,7 +1430,19 @@ async function szemelyLap(id) {
 }
 
 // ---------- Karrierállomás javítása (évkódok is) ----------
-const KMEZO = [['elsoev', 'Első év', 'ev'], ['utolsoev', 'Utolsó év', 'ev'], ['foglalkozas', 'Foglalkozás', 'text'], ['munkahely', 'Munkahely', 'text'], ['helyszin', 'Helyszín', 'text']];
+const EV_PONTOSSAG = ['pontos', 'körülbelül', 'legkorábban', 'legkésőbb', 'kezdet ismeretlen', 'vég ismeretlen', 'ismeretlen'];
+const BESOROLAS_ALAPJA = ['forrásban megnevezett beosztás', 'munkahelyből következtetett', 'beosztás ismeretlen'];
+const KMEZO = [['elsoev', 'Első év', 'ev'], ['utolsoev', 'Utolsó év', 'ev'], ['foglalkozas', 'Foglalkozás', 'text'], ['munkahely', 'Munkahely', 'text'], ['helyszin', 'Helyszín', 'text'],
+  ['ev_pontossag', 'Az évszám pontossága', EV_PONTOSSAG], ['besorolas_alapja', 'A besorolás alapja', BESOROLAS_ALAPJA]];
+// a bizonytalansági jelzők rövid megjelenítése a karrier táblában
+const EVJEL = { 'körülbelül': '~', 'legkorábban': '≥', 'legkésőbb': '≤', 'kezdet ismeretlen': '?–', 'vég ismeretlen': '–?', 'ismeretlen': '?' };
+function bizJel(k) {
+  const a = [];
+  if (k.ev_pontossag && k.ev_pontossag !== 'pontos') a.push(`<span class="badge b-gray" title="Az évszám pontossága: ${esc(k.ev_pontossag)}">${esc(EVJEL[k.ev_pontossag] || k.ev_pontossag)}</span>`);
+  if (k.besorolas_alapja === 'munkahelyből következtetett') a.push('<span class="badge b-gray" title="A besorolás a munkahelyből következtetett">köv.</span>');
+  if (k.besorolas_alapja === 'beosztás ismeretlen') a.push('<span class="badge b-gray" title="A beosztás ismeretlen, csak a munkahely ismert">beoszt. ?</span>');
+  return a.length ? ' ' + a.join(' ') : '';
+}
 function evkodJeloltek(leiras, szul) {
   const m = /(\d+)/.exec(leiras || ''); if (!m) return [];
   const d = m[1], parok = d.length === 4 ? [[d.slice(0, 2), d.slice(2)]] : d.length === 2 ? [[d, d]] : [];
@@ -1473,7 +1485,10 @@ async function karrierSzerk(karrierid, d, utana) {
       ${jel.length ? `<div><span class="small muted">Lehetséges feloldások (kattintásra kitölti):</span><div class="chips">${jel.map(([x, y, ok, ford]) => `<button type="button" class="chip ${ok ? '' : 'muted'}" data-jel="${x}-${y}" title="${ford ? 'a két év felcserélésével (feltételezett elírás)' : ok ? '' : 'a születési év alapján valószínűtlen'}">${x === y ? x : x + '–' + y}${ford ? ' ⇄' : ''}</button>`).join('')}</div>
         ${jel.some(j => j[3]) ? '<p class="small muted" style="margin:4px 0 0">A kódban a második év kisebb az elsőnél, ez valószínűleg rögzítési hiba. A ⇄ jelű javaslat a két év felcserélésével készült. Csak akkor válaszd, ha a forrás alátámasztja, és a Megjegyzésben jelezd.</p>' : ''}
         ${!jel.some(j => j[2]) ? '<p class="small muted" style="margin:4px 0 0">Egyik feloldás sem illik a születési évhez: valószínűleg elírás van a forrásban. Nézd meg a forrást, és írd be kézzel a helyes éveket.</p>' : ''}</div>` : ''}
-      <div class="szerk-racs">${KMEZO.map(([m, cim, tip]) => `<label data-m="${m}" data-tip="${tip}" data-eredeti="${esc(ertek(m))}">${cim}<input id="kf-${m}" value="${esc(ertek(m))}" ${tip === 'ev' ? 'inputmode="numeric" placeholder="éééé"' : ''}></label>`).join('')}</div>
+      <div class="szerk-racs">${KMEZO.map(([m, cim, tip]) => Array.isArray(tip)
+        ? `<label data-m="${m}" data-tip="lista" data-eredeti="${esc(ertek(m))}">${cim}<select id="kf-${m}"><option value="">— nincs külön jelölve —</option>${tip.map(o => `<option ${ertek(m) === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></label>`
+        : `<label data-m="${m}" data-tip="${tip}" data-eredeti="${esc(ertek(m))}">${cim}<input id="kf-${m}" value="${esc(ertek(m))}" ${tip === 'ev' ? 'inputmode="numeric" placeholder="éééé"' : ''}></label>`).join('')}</div>
+      <p class="small muted" style="margin:2px 0 0">Ha egy évről nincs információ, ne vegyél fel rá sort – a hézag magától látszik. Ha az év bizonytalan, maradjon az évszám, és jelöld a pontosságát. Ha csak a munkahely ismert, a harmonizált foglalkozás legyen „BEOSZTÁS ISMERETLEN”, a besorolás alapja „beosztás ismeretlen”.</p>
       <h4 style="margin:14px 0 4px">Harmonizált besorolás</h4>
       <p class="small muted" style="margin:0 0 6px">${k.harm_id ? `Jelenleg: ${allapotBadge(k.harm_allapot)}${k.nyitott_ertekek ? ' ' + esc(k.nyitott_ertekek) : ''}. A módosítás egyedi döntésként kerül be; a kódoló által beírt érték megmarad. Üresre állítva a kódolói érték érvényes újra.` : 'Ez az állomás még nincs harmonizálva; mentéskor új besorolás jön létre (forrás: ElitData2026 – döntés a nézegetőben).'} Ha van harmonizált foglalkozás vagy Hivatás1, az üres Hivatás2 NINCS-et jelent.</p>
       <div class="szerk-racs">${HM.map(hmMezo).join('')}</div>
@@ -1517,7 +1532,7 @@ async function karrierSzerk(karrierid, d, utana) {
     try {
       if ($('#kf-torol')?.checked) valt = { _torles: '1' };
       else d.querySelectorAll('label[data-m]').forEach(l => {
-        const uj = l.querySelector('input').value.trim();
+        const uj = l.querySelector('input,select').value.trim();
         if (uj !== l.dataset.eredeti) {
           if (l.dataset.tip === 'ev' && uj && !/^\d{4}$/.test(uj)) throw new Error(`${l.firstChild.textContent}: négyjegyű évszámot adj meg.`);
           valt[l.dataset.m] = uj;
