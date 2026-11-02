@@ -37,6 +37,7 @@ function harmF(k, m) {
   return '<span class="muted">—</span>';
 }
 // nem harmonizált karriersor: egyetlen cella a harmonizációs oszlopok helyén (ne keveredjen a „—” és a NINCS)
+const szemHiv = v => v ? `<i title="A személy teljes pályára rögzített értéke (Hivatás a teljes pályára)">${esc(v)}</i>` : '';
 const NEMHARM = (n, cls = '') => `<td colspan="${n}" class="muted small ${cls}" style="text-align:center;font-style:italic">nincs harmonizálva</td>`;
 // az alapadatbázis éveit rövidítve tárolja: 3 jegy = 1000 + n (pl. 905 = 1905), 2 jegy = 18xx/19xx (a születési év dönt)
 function ev(y, szul) {
@@ -761,8 +762,8 @@ function profilRender(P, id) {
       const evJav = jm.includes('elsoev') || jm.includes('utolsoev');
       return `<tr ${k.harm_id ? `class="click" data-h="${k.harm_id}"` : ''}><td style="white-space:nowrap">${tevGomb(k, EGYEB)}${S.szerkEz ? ` <button class="btn small" data-akad="${k.karrierid}" data-fogl="${esc(k.foglalkozas || '')}" title="Áthelyezés az Egyetemi és akadémiai pálya blokkba (habilitáció, doktorátus, kinevezés, MTA-tagság stb.)">→ egyetemi pálya</button>` : ''}</td><td>${idoszak(k.elsoev, k.utolsoev)}${bizJel(k)}${evJav ? jv(jm.includes('elsoev') ? 'elsoev' : 'utolsoev') : (k.leiras && k.leiras.startsWith('? kód') ? ` <span class="badge b-warn">${esc(k.leiras)}</span>` : '')}</td>
       <td>${dash(k.foglalkozas)}${jv('foglalkozas')}</td><td class="small">${dash(k.munkahely)}${jv('munkahely')}</td><td class="small">${dash(k.helyszin)}${jv('helyszin')}</td><td>${forrasBadge(k.forras, k.fazis)}</td>
-      ${k.harm_id ? `<td>${harmF(k, 'harmonizalt')}</td><td>${harmF(k, 'hivatas1')}</td><td>${harmF(k, 'hivatas2')}</td><td class="small">${esc(k.specifikacio || '')}</td>
-      <td>${forrasBadge(k.harm_forras || 'ElitData2026', 'ElitData2026')}</td><td>${allapotBadge(k.harm_allapot)}</td>` : NEMHARM(6)}<td style="white-space:nowrap"><button class="btn small" data-kj="${k.karrierid}">${S.szerkEz ? 'Javítás' : 'Besorolás'}</button></td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nincs karrieradat.</p>';
+      ${k.harm_id ? `<td>${harmF(k, 'harmonizalt')}</td><td>${harmF(k, 'hivatas1')}</td><td>${harmF(k, 'hivatas2')}</td><td class="small">${k.hivatas_szemelytol && k.specifikacio ? szemHiv(k.specifikacio) : esc(k.specifikacio || '')}</td>
+      <td>${forrasBadge(k.harm_forras || 'ElitData2026', 'ElitData2026')}</td><td>${allapotBadge(k.harm_allapot)}</td>` : `${NEMHARM(1)}<td>${szemHiv(k.hivatas1)}</td><td>${szemHiv(k.hivatas2)}</td><td class="small">${szemHiv(k.specifikacio)}</td><td></td><td></td>`}<td style="white-space:nowrap"><button class="btn small" data-kj="${k.karrierid}">${S.szerkEz ? 'Javítás' : 'Besorolás'}</button></td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nincs karrieradat.</p>';
   const karrierpoz = tabla(P.karrierpoziciok, [{ c: 'Belépés éve', f: s => evF(s.belepesev) }, { c: 'Pozíciókód évenként', f: s => pozkod(s), cls: 'small' }]);
   const csalad = tabla(P.csalad, [
     { c: 'Viszony', f: s => elit ? esc(SZEREP[s.szerep] || (s.szerep || '').toLowerCase().replace('_', ' ') || s.viszony) : esc(s.viszony) + (Number(s.elittage) === 1 ? ' <span class="badge b-info">elittag</span>' : '') },
@@ -849,14 +850,15 @@ function profilRender(P, id) {
     { c: 'Részletek', f: akadReszlet, cls: 'small' }, { c: 'Kapcsolódó személyek', k: 'kapcsolt_szemelyek', cls: 'small' }, { c: 'Megjegyzés', k: 'megjegyzes', cls: 'small' },
     { c: '', f: s => s.karrierid && S.szerkEz ? `<button class="btn small" data-akvissza="${s.karrierid}" title="A karrierállomás visszahelyezése a karrierbe">↩ karrierbe</button>` : null }]);
   const hp = P.hivatas || {};
-  const hivBox = elit ? `<div class="hiv-box"><b>Hivatás a teljes pályára:</b> Hivatás1: <b>${esc(hp.hivatas1 || '—')}</b> · Hivatás2: <b>${esc(hp.hivatas2 || '—')}</b>
+  const hivBox = elit ? `<div class="hiv-box"><b>Hivatás a teljes pályára:</b> Hivatás1: <b>${esc(hp.hivatas1 || '—')}</b> · Hivatás2: <b>${esc(hp.hivatas2 || '—')}</b> · Specifikáció: <b>${esc(hp.specifikacio || '—')}</b>
       ${S.szerkEz ? ` <button class="btn small" id="hvp-nyit">${hp.hivatas1 || hp.hivatas2 ? 'Módosítás' : 'Beállítás'}</button>
       <div id="hvp-urlap" class="hidden form" style="margin-top:8px"><div class="szerk-racs">
         <label>Hivatás1<select id="hvp-1">${['', 'NINCS', '?', ...((S.kodok || {}).hivatas1 || []).filter(x => !['NINCS', '?'].includes(x))].map(x => `<option ${x === (hp.hivatas1 || '') ? 'selected' : ''} value="${esc(x)}">${esc(x || '— válassz —')}</option>`).join('')}</select></label>
         <label>Hivatás2<select id="hvp-2">${['', 'NINCS', '?', ...((S.kodok || {}).hivatas2 || []).filter(x => !['NINCS', '?'].includes(x))].map(x => `<option ${x === (hp.hivatas2 || '') ? 'selected' : ''} value="${esc(x)}">${esc(x || '— válassz —')}</option>`).join('')}</select></label>
+        <label>Specifikáció (nem kötelező)<input id="hvp-s" value="${esc(hp.specifikacio || '')}" placeholder="pl. NEUROLÓGUS"></label>
         <label>Megjegyzés (nem kötelező)<input id="hvp-m"></label></div>
         <div class="toolbar"><button class="btn primary" id="hvp-ment">Mentés minden karriersorra</button></div><div id="hvp-msg"></div></div>` : ''}
-      <div class="small muted">Egyszer kell beállítani: minden meglévő karriersorra rákerül, és az ezután besorolt állomások is automatikusan ezt kapják.</div></div>` : '';
+      <div class="small muted">Egyszer kell beállítani: a személy minden karriersorán megjelenik (a még besorolatlanokon is, <i>dőlt betűvel</i>), és az ezután besorolt állomások is automatikusan ezt kapják. A specifikáció üresen hagyva a soronkénti értékeket nem módosítja.</div></div>` : '';
   const foglalk = tabla(P.foglalkozasok, [{ c: 'Mikor', f: s => esc(s.mikor || s.idopontkod) }, { c: 'Foglalkozás', k: 'foglalkozas' }]);
   const tartalom = [
     ['alap', 'Alapadatok', `${S.szerkEz ? '<div class="szerk-gomb"><button class="btn" id="alap-szerk">Szerkesztés</button></div>' : ''}<div id="alap-nezet"><div class="grid2"><div>${alap}</div><div>${halal}</div></div>${javitasLista(P, fb)}</div><div id="alap-urlap"></div>`],
@@ -1456,7 +1458,7 @@ async function szemelyLap(id) {
     $('#hvp-ment')?.addEventListener('click', async () => {
       const h1 = $('#hvp-1').value, h2 = $('#hvp-2').value;
       if (!h1 || !h2) return msg($('#hvp-msg'), 'Mindkét hivatást add meg (a Hivatás2 lehet NINCS).', 'err');
-      try { const { data: n } = await q(sb.rpc('hivatas_egysegesit', { p_szemelyid: id, p_hivatas1: h1, p_hivatas2: h2, p_megjegyzes: $('#hvp-m').value || null }));
+      try { const { data: n } = await q(sb.rpc('hivatas_egysegesit', { p_szemelyid: id, p_hivatas1: h1, p_hivatas2: h2, p_megjegyzes: $('#hvp-m').value || null, p_specifikacio: $('#hvp-s').value.trim() }));
         msg($('#hvp-msg'), `Mentve, ${n} karriersor frissült.`, 'ok'); setTimeout(() => szemelyLap(id).then(() => $('#sz-karrier')?.scrollIntoView()), 700);
       } catch (err) { hibaKiir($('#hvp-msg'), err); }
     });
@@ -1538,7 +1540,7 @@ async function karrierSzerk(karrierid, d, utana) {
     q(sb.from('tbl_sor_javitasok').select('*').eq('tabla', 'tbl_karrier').eq('rekord_id', karrierid).order('rogzitve', { ascending: false })),
   ]);
   const { data: sz } = await q(sb.from('tbl_szemelyek').select('vezeteknev,keresztnev,szuletesiev').eq('szemelyid', k.szemelyid).single());
-  const { data: shv } = await q(sb.from('tbl_szemely_hivatas').select('hivatas1,hivatas2').eq('szemelyid', k.szemelyid).maybeSingle());
+  const { data: shv } = await q(sb.from('tbl_szemely_hivatas').select('hivatas1,hivatas2,specifikacio').eq('szemelyid', k.szemelyid).maybeSingle());
   await kodtablak(); const kd = await kodok();
   const szul = ev(sz.szuletesiev), szerk = await szerkHet(k.szemelyid), e0 = k.eredeti || {};
   const HM = [['harmonizalt', 'Harmonizált foglalkozás', kd.harmonizalt], ['hivatas1', 'Hivatás1', ['NINCS', ...kd.hivatas1]], ['hivatas2', 'Hivatás2', ['NINCS', ...kd.hivatas2]], ['specifikacio', 'Specifikáció', null]];
@@ -1563,7 +1565,7 @@ async function karrierSzerk(karrierid, d, utana) {
         : `<label data-m="${m}" data-tip="${tip}" data-eredeti="${esc(ertek(m))}">${cim}<input id="kf-${m}" value="${esc(ertek(m))}" ${tip === 'ev' ? 'inputmode="numeric" placeholder="éééé"' : ''}></label>`).join('')}</div>
       <p class="small muted" style="margin:2px 0 0">Ha egy évről nincs információ, ne vegyél fel rá sort – a hézag magától látszik. Ha az év bizonytalan, maradjon az évszám, és jelöld a pontosságát. Ha csak a munkahely ismert, a harmonizált foglalkozás legyen „BEOSZTÁS ISMERETLEN”, a besorolás alapja „beosztás ismeretlen”.</p>
       <h4 style="margin:14px 0 4px">Harmonizált besorolás</h4>
-      <p class="small muted" style="margin:0 0 6px">${k.harm_id ? `Jelenleg: ${allapotBadge(k.harm_allapot)}${k.nyitott_ertekek ? ' ' + esc(k.nyitott_ertekek) : ''}. A módosítás egyedi döntésként kerül be; a kódoló által beírt érték megmarad. Üresre állítva a kódolói érték érvényes újra.` : 'Ez az állomás még nincs harmonizálva; mentéskor új besorolás jön létre (forrás: ElitData2026 – döntés a nézegetőben).'} Ha van harmonizált foglalkozás vagy Hivatás1, az üres Hivatás2 NINCS-et jelent.${shv ? ` <b>A személy rögzített hivatása (${esc(shv.hivatas1 || '—')} / ${esc(shv.hivatas2 || '—')}) új besorolásnál automatikusan bekerül, a hivatásmezőket nem kell kitölteni.</b>` : ''}</p>
+      <p class="small muted" style="margin:0 0 6px">${k.harm_id ? `Jelenleg: ${allapotBadge(k.harm_allapot)}${k.nyitott_ertekek ? ' ' + esc(k.nyitott_ertekek) : ''}. A módosítás egyedi döntésként kerül be; a kódoló által beírt érték megmarad. Üresre állítva a kódolói érték érvényes újra.` : 'Ez az állomás még nincs harmonizálva; mentéskor új besorolás jön létre (forrás: ElitData2026 – döntés a nézegetőben).'} Ha van harmonizált foglalkozás vagy Hivatás1, az üres Hivatás2 NINCS-et jelent.${shv ? ` <b>A személy rögzített hivatása (${esc(shv.hivatas1 || '—')} / ${esc(shv.hivatas2 || '—')}${shv.specifikacio ? ' / ' + esc(shv.specifikacio) : ''}) új besorolásnál automatikusan bekerül, a hivatás- és specifikációmezőket nem kell kitölteni.</b>` : ''}</p>
       <div class="szerk-racs">${HM.map(hmMezo).join('')}</div>
       <label class="torles"><input type="checkbox" id="kf-torol"> A karrierállomás törlése (téves vagy kettős sor) – a sor nem vész el, csak érvénytelennek jelöljük, és visszavonható</label>
       ${forrasValaszto('kf')}
