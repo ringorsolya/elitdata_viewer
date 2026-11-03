@@ -342,15 +342,15 @@ async function szabalyReszlet(id, d, utana, uzenet) {
   const { data: s } = await q(sb.from('tbl_ertek_szabalyok').select('*').eq('szabaly_id', id).single());
   const col = s.oszlop + '_beirt';
   const { data: sorok, count } = await q(sb.from('tbl_karrier_harmonizalas')
-    .select('harm_id,szemelyid,fajl_nev,fajl_foglalkozas,fajl_elsoev,fajl_utolsoev,harmonizalt_beirt,hivatas1_beirt,hivatas2_beirt,specifikacio_beirt,megjegyzes,forras_id', { count: 'exact' })
+    .select('harm_id,karrierid,szemelyid,fajl_nev,fajl_foglalkozas,fajl_elsoev,fajl_utolsoev,harmonizalt_beirt,hivatas1_beirt,hivatas2_beirt,specifikacio_beirt,harmonizalt_egyedi,hivatas1_egyedi,hivatas2_egyedi,specifikacio_egyedi,megjegyzes,forras_id', { count: 'exact' })
     .ilike(col, s.beirt_ertek.replace(/[\\%_]/g, m => '\\' + m)).order('fajl_nev').limit(300));
   const k = await kodok();
   // személyenként összevonva
   const szem = new Map();
   for (const r of sorok) {
     const key = r.szemelyid || r.fajl_nev;
-    if (!szem.has(key)) szem.set(key, { ...r, sorok: 0, fogl: new Set() });
-    const x = szem.get(key); x.sorok++; if (r.fajl_foglalkozas) x.fogl.add(r.fajl_foglalkozas);
+    if (!szem.has(key)) szem.set(key, { ...r, sorok: 0, fogl: new Set(), harmok: [] });
+    const x = szem.get(key); x.sorok++; x.harmok.push(r); if (r.fajl_foglalkozas) x.fogl.add(r.fajl_foglalkozas);
   }
   const lista = s.oszlop;
   // hatás: az érintett sorok jelenlegi harmonizációs állapota
@@ -406,12 +406,20 @@ async function szabalyReszlet(id, d, utana, uzenet) {
       <div id="szmsg"></div>
     </form>` : ''}
     <h3>Érintett személyek</h3>
-    <div class="tbl-wrap"><table><thead><tr><th>Név</th><th>Sorok</th><th>Hivatás1 / Hivatás2</th><th>Eredeti foglalkozások</th></tr></thead><tbody>${
-      [...szem.values()].map(r => `<tr><td>${r.szemelyid ? `<a href="#szemely=${r.szemelyid}" data-szem="${r.szemelyid}">${esc(r.fajl_nev)}</a>` : esc(r.fajl_nev)}</td><td>${r.sorok}</td>
+    <div class="tbl-wrap"><table><thead><tr><th>Név</th><th>Sorok <span class="muted small">(kattints a sorra az egyedi döntéshez)</span></th><th>Hivatás1 / Hivatás2</th><th>Eredeti foglalkozások</th></tr></thead><tbody>${
+      [...szem.values()].map(r => `<tr><td>${r.szemelyid ? `<a href="#szemely=${r.szemelyid}" data-szem="${r.szemelyid}">${esc(r.fajl_nev)}</a>` : esc(r.fajl_nev)}</td><td class="small">${r.harmok.map(x => {
+          const kesz = x[s.oszlop + '_egyedi'] !== null && x[s.oszlop + '_egyedi'] !== undefined;
+          const ev = String(x.fajl_elsoev || '').replace(/\.0$/, '');
+          return `<button type="button" class="chip ${kesz ? 'muted' : ''}" data-szhr="${x.harm_id}" title="${kesz ? 'Ezen a soron már van egyedi döntés: ' + esc(x[s.oszlop + '_egyedi'] || '(üres)') : 'Egyedi döntés erre a sorra'}">${esc([ev, x.fajl_foglalkozas].filter(Boolean).join(' ') || '#' + x.harm_id)}${kesz ? ' ✓' : ''}</button>`; }).join(' ')}</td>
         <td class="small">${dash(r.hivatas1_beirt)} / ${dash(r.hivatas2_beirt)}</td><td class="small">${esc([...r.fogl].slice(0, 6).join(', '))}</td></tr>`).join('')
     }</tbody></table></div>
     ${count > 300 ? '<p class="muted small">Az első 300 sor látszik.</p>' : ''}
+    <div id="szr-sor" style="margin-top:10px"></div>
   </div>`;
+  d.querySelectorAll('[data-szhr]').forEach(b => b.addEventListener('click', () => {
+    const c = $('#szr-sor', d);
+    harmReszlet(Number(b.dataset.szhr), c, () => szabalyReszlet(id, d, utana), s.oszlop).then(() => c.scrollIntoView({ behavior: 'smooth' })).catch(err => hibaKiir(c, err));
+  }));
   szemLinkek(d);
   if (!$('#szf', d)) return;
   const f = $('#szf', d);
@@ -469,7 +477,7 @@ async function szabalyReszlet(id, d, utana, uzenet) {
 }
 
 // egy harmonizációs sor részletei + egyedi döntés
-async function harmReszlet(harmId, d, utana) {
+async function harmReszlet(harmId, d, utana, elsoMezo) {
   const [{ data: h }, { data: v }] = await Promise.all([
     q(sb.from('tbl_karrier_harmonizalas').select('*').eq('harm_id', harmId).single()),
     q(sb.from('v_karrier_harmonizalt').select('*').eq('harm_id', harmId).single()),
@@ -477,7 +485,10 @@ async function harmReszlet(harmId, d, utana) {
   const { data: f } = await q(sb.from('tbl_forrasok').select('megnevezes,fazis').eq('forras_id', h.forras_id).single());
   const k = await kodok();
   const szerk = true; // a harmonizációt minden munkatárs szerkesztheti
-  const sor = m => `<tr><td>${MEZONEV[m]}</td><td>${dash(h[m + '_beirt'])}</td><td><b>${dash(v[m])}</b></td><td>${dash(h[m + '_egyedi'])}</td></tr>`;
+  // az a mező, amelyben a kódoló által beírt érték még eldöntendő (nem érvényes kód, és nincs egyedi döntés)
+  const nyitottMezo = (typeof elsoMezo === 'string' && elsoMezo) || ['harmonizalt', 'hivatas1', 'hivatas2', 'specifikacio']
+    .find(m => (h[m + '_beirt'] || '').trim() && !v[m] && !h[m + '_egyedi']) || 'harmonizalt';
+  const sor = m => `<tr${m === nyitottMezo && !v[m] ? ' class="nyitott-sor"' : ''}><td>${MEZONEV[m]}</td><td>${dash(h[m + '_beirt'])}</td><td><b>${dash(v[m])}</b></td><td>${dash(h[m + '_egyedi'])}</td></tr>`;
   d.innerHTML = `<div class="card">
     <h3 style="margin-top:0">${h.szemelyid ? `<a href="#szemely=${h.szemelyid}" data-szem="${h.szemelyid}">${esc(h.fajl_nev)}</a>` : esc(h.fajl_nev)}</h3>
     <div class="kv small">
@@ -494,7 +505,7 @@ async function harmReszlet(harmId, d, utana) {
       ${['harmonizalt', 'hivatas1', 'hivatas2', 'specifikacio'].map(sor).join('')}</tbody></table></div>
     ${szerk && h.karrierid ? `<form class="form" id="egf">
       <h3>Egyedi döntés erre a sorra</h3>
-      <label>Mező<select id="egm">${['hivatas1', 'hivatas2', 'harmonizalt', 'specifikacio'].map(m => `<option value="${m}">${MEZONEV[m]}</option>`).join('')}</select></label>
+      <label>Mező<select id="egm">${['harmonizalt', 'hivatas1', 'hivatas2', 'specifikacio'].map(m => `<option value="${m}" ${m === nyitottMezo ? 'selected' : ''}>${MEZONEV[m]}${m === nyitottMezo ? ' – döntésre vár' : ''}</option>`).join('')}</select></label>
       <label>Érték (üresen hagyva: az egyedi döntés törlése)<input id="ege" list="dl-eg"></label><span id="dl-eg-w"></span>
       <label>Megjegyzés<textarea id="egj"></textarea></label>
       <button class="btn primary" type="submit">Rögzítés</button><div id="egmsg"></div></form>` : ''}
@@ -760,7 +771,7 @@ function profilRender(P, id) {
   const karrier = karrierMunka.length ? `<div class="tbl-wrap"><p class="small muted" style="margin:0 0 6px">A sor elején lévő <b>→ egyéb</b> gombbal helyezhetsz át egy nem fizetett tevékenységet (egyesületi tisztség, igazgatósági tagság stb.) az „Egyesületi és egyéb tevékenység” blokkba, a <b>→ egyetemi pálya</b> gombbal pedig a tudományos előmenetelt (habilitáció, magántanárság, doktorátus, MTA-tagság) az „Egyetemi és akadémiai pálya” blokkba.</p><table id="kar-tbl"><thead><tr><th></th><th>Időszak</th><th>Foglalkozás</th><th>Munkahely</th><th>Helyszín</th><th>Forrás</th><th>Harmonizált</th><th>Hivatás1</th><th>Hivatás2</th><th>Specifikáció</th><th>Harm. forrás</th><th>Állapot</th><th></th></tr></thead><tbody>${
     karrierMunka.map(k => { const jm = k.javitott_mezok || [], jv = m => jm.includes(m) ? ` <span class="muted small" title="Javított érték; eredetileg: ${esc(k.eredeti?.[m] ?? '—')}">*</span>` : '';
       const evJav = jm.includes('elsoev') || jm.includes('utolsoev');
-      return `<tr ${k.harm_id ? `class="click" data-h="${k.harm_id}"` : ''}><td style="white-space:nowrap">${tevGomb(k, EGYEB)}${S.szerkEz ? ` <button class="btn small" data-akad="${k.karrierid}" data-fogl="${esc(k.foglalkozas || '')}" title="Áthelyezés az Egyetemi és akadémiai pálya blokkba (habilitáció, doktorátus, kinevezés, MTA-tagság stb.)">→ egyetemi pálya</button>` : ''}</td><td>${idoszak(k.elsoev, k.utolsoev)}${bizJel(k)}${evJav ? jv(jm.includes('elsoev') ? 'elsoev' : 'utolsoev') : (k.leiras && k.leiras.startsWith('? kód') ? ` <span class="badge b-warn">${esc(k.leiras)}</span>` : '')}</td>
+      return `<tr class="click" ${k.harm_id ? `data-h="${k.harm_id}"` : `data-kjsor="${k.karrierid}" title="Kattints a besoroláshoz"`}><td style="white-space:nowrap">${tevGomb(k, EGYEB)}${S.szerkEz ? ` <button class="btn small" data-akad="${k.karrierid}" data-fogl="${esc(k.foglalkozas || '')}" title="Áthelyezés az Egyetemi és akadémiai pálya blokkba (habilitáció, doktorátus, kinevezés, MTA-tagság stb.)">→ egyetemi pálya</button>` : ''}</td><td>${idoszak(k.elsoev, k.utolsoev)}${bizJel(k)}${evJav ? jv(jm.includes('elsoev') ? 'elsoev' : 'utolsoev') : (k.leiras && k.leiras.startsWith('? kód') ? ` <span class="badge b-warn">${esc(k.leiras)}</span>` : '')}</td>
       <td>${dash(k.foglalkozas)}${jv('foglalkozas')}</td><td class="small">${dash(k.munkahely)}${jv('munkahely')}</td><td class="small">${dash(k.helyszin)}${jv('helyszin')}</td><td>${forrasBadge(k.forras, k.fazis)}</td>
       ${k.harm_id ? `<td>${harmF(k, 'harmonizalt')}</td><td>${harmF(k, 'hivatas1')}</td><td>${harmF(k, 'hivatas2')}</td><td class="small">${k.hivatas_szemelytol && k.specifikacio ? szemHiv(k.specifikacio) : esc(k.specifikacio || '')}</td>
       <td>${forrasBadge(k.harm_forras || 'ElitData2026', 'ElitData2026')}</td><td>${allapotBadge(k.harm_allapot)}</td>` : `${NEMHARM(1)}<td>${szemHiv(k.hivatas1)}</td><td>${szemHiv(k.hivatas2)}</td><td class="small">${szemHiv(k.specifikacio)}</td><td></td><td></td>`}<td style="white-space:nowrap"><button class="btn small" data-kj="${k.karrierid}">${S.szerkEz ? 'Javítás' : 'Besorolás'}</button></td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nincs karrieradat.</p>';
@@ -1494,8 +1505,9 @@ async function szemelyLap(id) {
       karrierSzerk(Number(kb.dataset.kj), $('#detail-egyeb'), () => szemelyLap(id).then(() => $('#sz-egyeb')?.scrollIntoView())).catch(err => hibaKiir($('#detail-egyeb'), err));
     });
     $('#kar-tbl tbody')?.addEventListener('click', e => {
-      const kb = e.target.closest('[data-kj]');
-      if (kb) { karrierSzerk(Number(kb.dataset.kj), $('#detail'), () => szemelyLap(id).then(() => $('#sz-karrier')?.scrollIntoView())).catch(err => hibaKiir($('#detail'), err)); $('#detail').scrollIntoView({ behavior: 'smooth' }); return; }
+      if (e.target.closest('button, a, input, select')) { if (!e.target.closest('[data-kj]')) return; }
+      const kb = e.target.closest('[data-kj]') || (!e.target.closest('tr[data-h]') && e.target.closest('tr[data-kjsor]'));
+      if (kb) { karrierSzerk(Number(kb.dataset.kj || kb.dataset.kjsor), $('#detail'), () => szemelyLap(id).then(() => $('#sz-karrier')?.scrollIntoView())).catch(err => hibaKiir($('#detail'), err)); $('#detail').scrollIntoView({ behavior: 'smooth' }); return; }
       const tr = e.target.closest('tr[data-h]'); if (!tr) return;
       harmReszlet(Number(tr.dataset.h), $('#detail'), () => szemelyLap(id)).catch(err => hibaKiir($('#detail'), err));
       $('#detail').scrollIntoView({ behavior: 'smooth' });
