@@ -778,7 +778,7 @@ function profilRender(P, id) {
     { c: 'Diploma éve', f: s => evF(s.diplomaev) },
     { c: 'Diploma fajtája', f: s => { if (Number(s.diplomafajta) === 11) return `${izr ? 'rabbiképesítő' : 'lelkészi oklevél'} <span class="muted small" title="A KIG-kódkönyv 11-es kódja összevont kategória: lelkészi oklevél, rabbiképesítő. A felekezet alapján jelenítjük meg.">(11)</span>`; const d = kt.diploma.get(Number(s.diplomafajta)); return d ? `${esc(d.nev)}${d.statusz === 'következtetett' ? ' <span class="muted small" title="A kódkönyvben nem szerepel; az adatokból következtetett jelentés">(?)</span>' : ''}` : kod(s.diplomafajta); } },
     { c: 'Tanítási nyelv', f: s => kod(s.tanitasinyelv) },
-    { c: 'Végzettség', f: s => kod(s['vegzettségkod']) },
+    { c: 'Végzettség', f: s => [s.vegzettseg_szoveg ? esc(s.vegzettseg_szoveg) : null, kod(s['vegzettségkod'])].filter(Boolean).join(' ') || null },
   ]);
   const EGYEB = 'egyesületi és egyéb';
   const karrierMunka = (P.karrier || []).filter(k => (k.tevekenyseg || 'fizetett munka') === 'fizetett munka'), karrierEgyeb = (P.karrier || []).filter(k => k.tevekenyseg === EGYEB);
@@ -796,7 +796,7 @@ function profilRender(P, id) {
       <td>${dash(k.foglalkozas)}${jv('foglalkozas')}</td><td class="small">${dash(k.munkahely)}${jv('munkahely')}</td><td class="small">${dash(k.helyszin)}${jv('helyszin')}</td><td>${forrasBadge(k.forras, k.fazis)}</td>
       ${k.harm_id ? `<td>${harmF(k, 'harmonizalt')}</td><td>${harmF(k, 'hivatas1')}</td><td>${harmF(k, 'hivatas2')}</td><td class="small">${k.hivatas_szemelytol && k.specifikacio ? szemHiv(k.specifikacio) : esc(k.specifikacio || '')}</td>
       <td>${forrasBadge(k.harm_forras || 'ElitData2026', 'ElitData2026')}</td><td>${allapotBadge(k.harm_allapot)}</td>` : `${NEMHARM(1)}<td>${szemHiv(k.hivatas1)}</td><td>${szemHiv(k.hivatas2)}</td><td class="small">${szemHiv(k.specifikacio)}</td><td></td><td></td>`}<td style="white-space:nowrap"><button class="btn small" data-kj="${k.karrierid}">${S.szerkEz ? 'Javítás' : 'Besorolás'}</button></td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nincs karrieradat.</p>';
-  const karrierpoz = tabla(P.karrierpoziciok, [{ c: 'Belépés éve', f: s => evF(s.belepesev) }, { c: 'Pozíciókód évenként', f: s => pozkod(s), cls: 'small' }]);
+  const karrierpoz = tabla(P.karrierpoziciok, [{ c: 'Belépés éve', f: s => evF(s.belepesev) }, { c: 'Pozíció', f: s => s.pozicio_szoveg ? esc(s.pozicio_szoveg) : null }, { c: 'Pozíciókód évenként', f: s => pozkod(s), cls: 'small' }]);
   const csalad = tabla(P.csalad, [
     { c: 'Viszony', f: s => elit ? esc(SZEREP[s.szerep] || (s.szerep || '').toLowerCase().replace('_', ' ') || s.viszony) : esc(s.viszony) + (Number(s.elittage) === 1 ? ' <span class="badge b-info">elittag</span>' : '') },
     { c: 'Név', f: s => `<a href="#szemely=${s.rokonid}" data-szem="${s.rokonid}">${esc(s.nev)}</a>` },
@@ -843,8 +843,8 @@ function profilRender(P, id) {
   ]);
   const kulfold = tabla(P.kulfold, [{ c: 'Ország', f: s => helyF(s.orszagkod) }, { c: 'Időszak', f: s => (s.kezdoev === null && s.vegev === null) ? null : idoszak(s.kezdoev, s.vegev, szul) }]);
   const szerv = [
-    P.szervezet_belfold?.length ? '<h4>Belföldi szervezetek</h4>' + tabla(P.szervezet_belfold, [{ c: 'Szervezet', k: 'szervezetnev' }, { c: 'Belépés', f: s => evF(s.belepesev) }, { c: 'Pozíciókód évenként', f: s => pozkod(s), cls: 'small' }]) : '',
-    P.szervezet_kulfold?.length ? '<h4>Külföldi szervezetek</h4>' + tabla(P.szervezet_kulfold, [{ c: 'Szervezet', k: 'szervezetnev' }, { c: 'Ország', f: s => helyF(s.orszagkod) }, { c: 'Pozíciókód évenként', f: s => pozkod(s), cls: 'small' }]) : '',
+    P.szervezet_belfold?.length ? '<h4>Belföldi szervezetek</h4>' + tabla(P.szervezet_belfold, [{ c: 'Szervezet', k: 'szervezetnev' }, { c: 'Belépés', f: s => evF(s.belepesev) }, { c: 'Pozíció', f: s => s.pozicio_szoveg ? esc(s.pozicio_szoveg) : null }, { c: 'Pozíciókód évenként', f: s => pozkod(s), cls: 'small' }]) : '',
+    P.szervezet_kulfold?.length ? '<h4>Külföldi szervezetek</h4>' + tabla(P.szervezet_kulfold, [{ c: 'Szervezet', k: 'szervezetnev' }, { c: 'Ország', f: s => helyF(s.orszagkod) }, { c: 'Pozíció', f: s => s.pozicio_szoveg ? esc(s.pozicio_szoveg) : null }, { c: 'Pozíciókód évenként', f: s => pozkod(s), cls: 'small' }]) : '',
   ].join('');
   // a belső mezők (_jav, _eredeti: a javítási réteg adatai) nem jelennek meg; a javított mező mellett * jelzi a javítást
   const egyebPol = (P.egyeb_politikai || []).map(s => kvBlokk(Object.entries(s).filter(([k, v]) => v !== null && v !== '' && !k.startsWith('_') && !['azonosító', 'szemelyid', 'forras_id', 'rogzitve', 'elfogadott'].includes(k))
@@ -1203,7 +1203,7 @@ const CIMKE = { ev: 'Év', sorszam: 'Sorszám', kituntetekod: 'Kitüntetés a k�
   sub_auspiciis: 'Sub auspiciis doktor', szavazat_igen: 'Igen szavazat', szavazat_tartozkodas: 'Tartózkodás', szavazat_nem: 'Nem szavazat',
   vizsgafelmentes: 'Vizsgafelmentés', eloadasfelmentes: 'Próbaelőadás-felmentés', probak_szama: 'Próbák száma', eleres_modja: 'Elérés módja (kód)',
   jeloltek_szama: 'Jelöltek száma', megfelelt_jeloltek: 'Megfelelt jelöltek', helyezes_bizottsag: 'Helyezés (bizottság)', helyezes_kar: 'Helyezés (kar)',
-  tisztseg_kod: 'MTA-tisztség (kód)', kapcsolt_szemelyek: 'Kapcsolódó személyek',
+  tisztseg_kod: 'MTA-tisztség (kód)', tisztseg_szoveg: 'MTA-tisztség (szövegesen)', kar_szoveg: 'Kar (szövegesen)', pozicio_szoveg: 'Pozíció (szövegesen)', vegzettseg_szoveg: 'Végzettség (szövegesen)', kapcsolt_szemelyek: 'Kapcsolódó személyek',
   kezdeteve: 'Kapcsolat kezdete', vegeeve: 'Kapcsolat vége', gyermekmelyikhazassagbol: 'Melyik házasságból',
   ...Object.fromEntries(['1914', '1922', '1928', '1933', '1938', '1942', '1947'].map(y => ['pozkod_' + y, 'Pozíció ' + y + ' (kód)'])),
 };
@@ -2216,6 +2216,28 @@ async function naploLap() {
 }
 
 // ---------- Kódkönyvek ----------
+// kódkönyv nélküli kódok megfejtése: a karkódok javasolt jelentése és a szövegesen rögzített kód–szöveg párok
+async function kodMegfejtes(box) {
+  try {
+    const [{ data: kar }, { data: par }] = await Promise.all([
+      q(sb.from('v_kar_kod_javaslat').select('*').order('egyetem_kod').order('kar_kod')),
+      q(sb.from('v_kod_szoveg_parok').select('*').order('mezo').order('kod').order('sorok', { ascending: false })),
+    ]);
+    const bb = { 'valószínű': 'b-ok', 'bizonytalan': 'b-warn', 'nincs adat': 'b-gray' };
+    box.innerHTML = `<div class="card"><h3 style="margin-top:0">Kódok megfejtése (kódkönyv nélküli mezők)</h3>
+      <p class="small muted">A pozíciókódokhoz, a végzettségkódhoz, az MTA-tisztség és a kar kódjához nincs meg a KIG-kódkönyv. Ezért a szerkesztőben ezek mellé szöveges mező került („… (szövegesen)”). Ha a kód mellé azt is beírjátok, mit jelent, itt összegyűlik, melyik kódhoz eddig milyen szöveg tartozott – ebből a kódlista később összeállítható.</p>
+      <h4>Kar kódja egyetemenként – javaslat a tudományterületek alapján</h4>
+      <p class="small muted">A karkód egyetemenként mást jelent (a kar sorszáma az adott egyetemen). A javaslat abból készül, hogy az adott egyetem adott karkódú soraiban milyen tudományterületek szerepelnek; a „valószínű” azt jelenti, hogy legalább 5 besorolható sor 60%-a ugyanoda esik. Jóváhagyás után a kar neve kerülhet a kódlistába.</p>
+      <div class="tbl-wrap"><table class="small"><thead><tr><th>Egyetem</th><th>Kód</th><th>Javasolt jelentés</th><th>Biztonság</th><th>Sorok</th><th>Megoszlás</th></tr></thead><tbody>${
+        (kar || []).filter(r => r.egyetem).map(r => `<tr><td>${esc(r.egyetem)} <span class="muted">(${r.egyetem_kod})</span></td><td>${r.kar_kod}</td><td>${esc(r.javaslat || '—')}</td>
+          <td><span class="badge ${bb[r.biztonsag] || 'b-gray'}">${esc(r.biztonsag)}</span></td><td>${r.sorok}</td><td class="muted">${esc(r.megoszlas || '')}</td></tr>`).join('')}</tbody></table></div>
+      <h4>Szövegesen rögzített kódok</h4>
+      ${(par || []).length ? `<div class="tbl-wrap"><table class="small"><thead><tr><th>Mező</th><th>Kód</th><th>Szöveg</th><th>Sorok</th><th>Személyek</th></tr></thead><tbody>${
+        par.map(r => `<tr><td>${esc(r.mezo)}</td><td>${r.kod}</td><td>${esc(r.szoveg)}</td><td>${r.sorok}</td><td>${r.szemelyek}</td></tr>`).join('')}</tbody></table></div>`
+        : '<p class="muted small">Még nincs szövegesen rögzített kód. Amint valaki kitölti a „… (szövegesen)” mezőket, itt megjelennek.</p>'}
+    </div>`;
+  } catch (e) { hibaKiir(box, e); }
+}
 const KK_NEV = { foglalkozas: 'Foglalkozás (harmonizált)', hivatas1: 'Hivatás1', hivatas2: 'Hivatás2' };
 async function kodkonyvLap(kk = 'foglalkozas') {
   app.innerHTML = `<h2>Kódkönyvek</h2>
@@ -2235,7 +2257,9 @@ async function kodkonyvLap(kk = 'foglalkozas') {
       <label>Megjegyzés<textarea id="kk-megj" rows="2"></textarea></label>
       <div class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="kk-ervenyes" checked style="width:auto"><span>érvényes (adható érték)</span></div>
       <div><button class="btn primary" type="submit">Mentés</button> <button class="btn hidden" type="button" id="kk-megse">Mégse</button></div>
-    </form><div id="kk-msg"></div></div>`;
+    </form><div id="kk-msg"></div></div>
+    <div id="kk-megfejt" style="margin-top:14px"></div>`;
+  kodMegfejtes($('#kk-megfejt'));
   let sorok = [];
   app.querySelectorAll('[data-kk]').forEach(b => b.addEventListener('click', () => kodkonyvLap(b.dataset.kk)));
   const urlap = r => {
