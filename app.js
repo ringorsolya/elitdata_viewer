@@ -353,6 +353,18 @@ async function szabalyReszlet(id, d, utana, uzenet) {
     const x = szem.get(key); x.sorok++; x.harmok.push(r); if (r.fajl_foglalkozas) x.fogl.add(r.fajl_foglalkozas);
   }
   const lista = s.oszlop;
+  // melyik sor van még a karrierben (fizetett munka) – az áthelyezett és törölt sorokról nem kell dönteni
+  const tevMap = new Map();
+  { const kids = [...new Set(sorok.map(r => r.karrierid).filter(Boolean))];
+    if (kids.length) { const { data: tv } = await q(sb.from('v_karrier_reszletes').select('karrierid,tevekenyseg').in('karrierid', kids)); (tv || []).forEach(t => tevMap.set(t.karrierid, t.tevekenyseg)); } }
+  const sorAllapot = x => {
+    if (x[s.oszlop + '_egyedi'] !== null && x[s.oszlop + '_egyedi'] !== undefined) return { kesz: true, cim: 'Ezen a soron már van egyedi döntés: ' + (x[s.oszlop + '_egyedi'] || '(üres)'), jel: ' ✓' };
+    if (x.karrierid && !tevMap.has(x.karrierid)) return { kesz: true, cim: 'A karrierállomás törölve – nem kell dönteni róla', jel: ' (törölve)' };
+    const t = tevMap.get(x.karrierid);
+    if (t && t !== 'fizetett munka') return { kesz: true, cim: `Áthelyezve: ${t} – nem kell dönteni róla`, jel: ' (áthelyezve)' };
+    return { kesz: false, cim: 'Egyedi döntés erre a sorra', jel: '' };
+  };
+  const nyitottDb = sorok.filter(x => !sorAllapot(x).kesz).length;
   // hatás: az érintett sorok jelenlegi harmonizációs állapota
   const hatas = await hatasSzamol(sorok.map(r => r.harm_id));
   let kanon = null;
@@ -406,11 +418,12 @@ async function szabalyReszlet(id, d, utana, uzenet) {
       <div id="szmsg"></div>
     </form>` : ''}
     <h3>Érintett személyek</h3>
-    <div class="tbl-wrap"><table><thead><tr><th>Név</th><th>Sorok <span class="muted small">(kattints a sorra az egyedi döntéshez)</span></th><th>Hivatás1 / Hivatás2</th><th>Eredeti foglalkozások</th></tr></thead><tbody>${
-      [...szem.values()].map(r => `<tr><td>${r.szemelyid ? `<a href="#szemely=${r.szemelyid}" data-szem="${r.szemelyid}">${esc(r.fajl_nev)}</a>` : esc(r.fajl_nev)}</td><td class="small">${r.harmok.map(x => {
-          const kesz = x[s.oszlop + '_egyedi'] !== null && x[s.oszlop + '_egyedi'] !== undefined;
+    <p class="small">${nyitottDb ? `<b>Még ${nyitottDb} sor vár döntésre</b> (ezek állnak elöl). A szabály akkor tűnik el a Nyitott kérdések közül, ha egy sem marad – vagy ha fent a szabály szintjén döntesz, ami az összes sorra egyszerre érvényes.` : '<b>Minden sor el van döntve, áthelyezve vagy törölve</b> – a szabály a következő frissítéskor eltűnik a Nyitott kérdések közül.'}</p>
+    <div class="tbl-wrap"><table><thead><tr><th>Név</th><th>Sorok <span class="muted small">(kattints a sorra az egyedi döntéshez; halvány = már eldöntve, áthelyezve vagy törölve)</span></th><th>Hivatás1 / Hivatás2</th><th>Eredeti foglalkozások</th></tr></thead><tbody>${
+      [...szem.values()].sort((a, b) => (a.harmok.some(x => !sorAllapot(x).kesz) ? 0 : 1) - (b.harmok.some(x => !sorAllapot(x).kesz) ? 0 : 1)).map(r => `<tr ${r.harmok.every(x => sorAllapot(x).kesz) ? 'class="kesz-sor"' : ''}><td>${r.szemelyid ? `<a href="#szemely=${r.szemelyid}" data-szem="${r.szemelyid}">${esc(r.fajl_nev)}</a>` : esc(r.fajl_nev)}</td><td class="small">${r.harmok.map(x => {
+          const a = sorAllapot(x);
           const ev = String(x.fajl_elsoev || '').replace(/\.0$/, '');
-          return `<button type="button" class="chip ${kesz ? 'muted' : ''}" data-szhr="${x.harm_id}" title="${kesz ? 'Ezen a soron már van egyedi döntés: ' + esc(x[s.oszlop + '_egyedi'] || '(üres)') : 'Egyedi döntés erre a sorra'}">${esc([ev, x.fajl_foglalkozas].filter(Boolean).join(' ') || '#' + x.harm_id)}${kesz ? ' ✓' : ''}</button>`; }).join(' ')}</td>
+          return `<button type="button" class="chip ${a.kesz ? 'muted' : ''}" data-szhr="${x.harm_id}" title="${esc(a.cim)}">${esc([ev, x.fajl_foglalkozas].filter(Boolean).join(' ') || '#' + x.harm_id)}${a.jel}</button>`; }).join(' ')}</td>
         <td class="small">${dash(r.hivatas1_beirt)} / ${dash(r.hivatas2_beirt)}</td><td class="small">${esc([...r.fogl].slice(0, 6).join(', '))}</td></tr>`).join('')
     }</tbody></table></div>
     ${count > 300 ? '<p class="muted small">Az első 300 sor látszik.</p>' : ''}
@@ -591,7 +604,7 @@ async function szemelyekLap() {
       // harmonizált foglalkozás és hivatások az oldalon látható elittagokra
       const elitIds = data.filter(r => r.elittage === 1).map(r => r.szemelyid), H = new Map();
       if (elitIds.length) {
-        const hs = await mindLeker(() => sb.from('v_karrier_harmonizalt').select('szemelyid,harmonizalt,hivatas1,hivatas2').in('szemelyid', elitIds).order('harm_id'));
+        const hs = await mindLeker(() => sb.from('v_karrier_reszletes').select('szemelyid,harmonizalt,hivatas1,hivatas2').in('szemelyid', elitIds).eq('tevekenyseg', 'fizetett munka').not('harm_id', 'is', null).order('karrierid'));
         for (const r of hs) {
           if (!H.has(r.szemelyid)) H.set(r.szemelyid, { h: new Map(), h1: new Map(), h2: new Map() });
           const x = H.get(r.szemelyid);
@@ -1514,8 +1527,8 @@ async function szemelyLap(id) {
     });
     app.querySelectorAll('[data-akad]').forEach(b => b.addEventListener('click', e => {
       e.stopPropagation(); const td = b.closest('td'), f = (b.dataset.fogl || '').toUpperCase();
-      const alap = /HABIL|MAGÁNTAN/.test(f) ? 'magántanári habilitáció' : /DOKTOR/.test(f) ? 'doktori fokozat' : /KANDID/.test(f) ? 'kandidátus' : /DÉKÁN/.test(f) ? 'dékán' : /REKTOR/.test(f) ? 'rektor' : /RK\.? ?T|RENDKÍVÜLI TANÁR/.test(f) ? 'nyilvános rendkívüli tanár' : /NY\.? ?R\.? ?T|NYRT|RENDES TANÁR/.test(f) ? 'nyilvános rendes tanár' : 'magántanári habilitáció';
-      const ESEM = ['magántanári habilitáció', 'doktori fokozat', 'nyilvános rendkívüli tanár', 'nyilvános rendes tanár', 'címzetes nyilvános rendkívüli tanár', 'címzetes nyilvános rendes tanár',
+      const alap = /HABIL|MAGÁNTAN/.test(f) ? 'magántanári habilitáció' : /DOKTOR/.test(f) ? 'doktori fokozat' : /KANDID/.test(f) ? 'kandidátus' : /DÉKÁN/.test(f) ? 'dékán' : /REKTOR/.test(f) ? 'rektor' : /RK\.? ?T|RENDKÍVÜLI TANÁR/.test(f) ? 'nyilvános rendkívüli tanár' : false && /NY\.? ?R\.? ?T|NYRT|RENDES TANÁR/.test(f) ? 'nyilvános rendes tanár' : 'magántanári habilitáció';
+      const ESEM = ['magántanári habilitáció', 'doktori fokozat', 'nyilvános rendkívüli tanár', 'címzetes nyilvános rendkívüli tanár', 'címzetes nyilvános rendes tanár',
         'dékán', 'rektor', 'MTA levelező tag', 'MTA rendes tag', 'MTA tiszteleti tag', 'kandidátus', 'tudományok doktora', 'egyéb akadémiai esemény'];
       const regi = td.innerHTML;
       td.innerHTML = `<select class="akad-sel">${ESEM.map(x => `<option ${x === alap ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select> <button class="btn small primary akad-ok">OK</button> <button class="btn small akad-megse">Mégse</button>`;
