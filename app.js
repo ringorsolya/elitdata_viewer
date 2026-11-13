@@ -1068,6 +1068,63 @@ async function forrasAzonosito(prefix) {
   return data;
 }
 // a személy adatlapjának tetején: a lap forrása
+// ---------- Egy személy adatlapjának letöltése egyben (csak az adatok – a munkafelület elemei nélkül) ----------
+const ADATLAP_CSS = `body{font-family:Georgia,'Times New Roman',serif;color:#1d1d1f;background:#fff;max-width:960px;margin:24px auto;padding:0 16px;line-height:1.45;font-size:11pt}
+h1{font-size:20pt;margin:0 0 4px}h3{font-size:13pt;margin:18px 0 6px;border-bottom:1px solid #999;padding-bottom:2px}h4{font-size:11pt;margin:10px 0 4px}
+p{margin:4px 0}.muted{color:#666}.small{font-size:9pt}table{border-collapse:collapse;width:100%;margin:4px 0 8px;font-size:9.5pt}
+th,td{border:1px solid #bbb;padding:3px 6px;text-align:left;vertical-align:top}th{background:#eee}table.kvt th{width:32%;background:#f6f6f6;font-weight:normal;color:#444}
+.badge{display:inline-block;border:1px solid #bbb;border-radius:4px;padding:0 4px;font-size:8pt;font-family:Arial,sans-serif;white-space:nowrap}
+.kod{font-family:monospace;font-size:9pt;background:#fff3cd;padding:0 3px}dl,.kv{margin:0}.lab{color:#555}
+.fej-meta{color:#555;font-size:10pt;margin-bottom:12px}.lab-lab{color:#777;font-size:8.5pt;margin-top:24px;border-top:1px solid #ccc;padding-top:6px}
+@media print{body{margin:0;max-width:none}section{break-inside:auto}h3{break-after:avoid}tr{break-inside:avoid}}`;
+function adatlapHtml(P, R, id) {
+  const sz = P.szemely || {};
+  const tmp = document.createElement('div');
+  tmp.innerHTML = R.tartalom.map(([k, cim, html, n]) => `<section><h3>${esc(cim)}${n ? ` <span class="muted small">(${n})</span>` : ''}</h3>${html}</section>`).join('');
+  // a munkafelület elemei kimaradnak: gombok, űrlapok, szerkesztő mezők, kattintható jelölések
+  tmp.querySelectorAll('button, form, input, select, textarea, script, #hvp-urlap, .hidden, .szerk-gomb, .no-export, .hiv-box .muted').forEach(e => e.remove());
+  tmp.querySelectorAll('a').forEach(a => { const sp = document.createElement('span'); sp.innerHTML = a.innerHTML; a.replaceWith(sp); });
+  // kulcs–érték blokkok táblázattá (a Word a rácselrendezést nem ismeri)
+  tmp.querySelectorAll('.kv').forEach(kv => {
+    const d = [...kv.children]; let h = '<table class="kvt"><tbody>';
+    for (let i = 0; i < d.length; i += 2) h += `<tr><th>${d[i].innerHTML}</th><td>${d[i + 1] ? d[i + 1].innerHTML : ''}</td></tr>`;
+    kv.outerHTML = h + '</tbody></table>';
+  });
+  tmp.querySelectorAll('[class]').forEach(e => e.classList.remove('click', 'sel'));
+  // a csak gombokat tartalmazó (most üres) táblázatoszlopok törlése
+  tmp.querySelectorAll('table').forEach(t => {
+    const sorok = [...t.rows]; if (!sorok.length) return;
+    for (let c = sorok[0].cells.length - 1; c >= 0; c--) {
+      const ures = sorok.slice(1).every(r => !r.cells[c] || !r.cells[c].textContent.trim());
+      const fej = (sorok[0].cells[c]?.textContent || '').trim();
+      if (ures && (!fej || /^(művelet|javítás)?$/i.test(fej))) sorok.forEach(r => r.cells[c] && r.deleteCell(c));
+    }
+  });
+  const halal = P.reszletek && P.reszletek.halalev ? '–' + esc(ev(P.reszletek.halalev, R.szul)) : '';
+  const datum = new Date().toLocaleDateString('hu-HU');
+  return `<!DOCTYPE html><html lang="hu"><head><meta charset="utf-8"><title>${esc(R.nev)} – ElitData adatlap</title><style>${ADATLAP_CSS}</style></head><body>
+    <h1>${esc(R.nev)}</h1>${nevalakSor(P)}
+    <div class="fej-meta">${R.szul ? esc(R.szul) : '?'}${halal}${sz.szuletesihely ? ' · ' + esc(sz.szuletesihely) : ''} · ${R.elit ? 'elittag' : 'családtag' + (P.elittag ? ' – elittag: ' + esc(P.elittag.nev) : '')} · SzemélyID: ${id}</div>
+    ${tmp.innerHTML}
+    <p class="lab-lab">ElitData – adatlap, letöltve: ${datum}. Forrásjelölés: KIG = KIG-féle kutatás, ElitData2026 = 2026-os adatgyűjtés; „kód N” = a kód jelentése a KIG-kódkönyvből pótlandó.</p>
+  </body></html>`;
+}
+function adatlapLetolt(mod, P, R, id) {
+  const html = adatlapHtml(P, R, id);
+  const fajl = `ElitData_${(R.nev || 'adatlap').replace(/[^\p{L}\p{N}]+/gu, '_')}_${id}`;
+  const ment = (tartalom, tipus, kit) => {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + tartalom], { type: tipus }));
+    a.download = fajl + kit; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  };
+  if (mod === 'html') return ment(html, 'text/html;charset=utf-8', '.html');
+  if (mod === 'word') return ment(html.replace('<html lang="hu">', '<html lang="hu" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">'), 'application/msword', '.doc');
+  // PDF: nyomtatási nézet új ablakban – a böngésző nyomtatásánál „Mentés PDF-ként”
+  const w = window.open('', '_blank');
+  if (!w) { alert('A böngésző letiltotta az új ablakot. Engedélyezd a felugró ablakokat ehhez az oldalhoz, vagy válaszd a HTML/Word letöltést.'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+  w.onload = () => setTimeout(() => w.print(), 300); setTimeout(() => { try { w.print(); } catch (e) { } }, 1200);
+}
+
 function lapForrasSav(id) {
   const lf = lapForras(id);
   setTimeout(() => {
@@ -1483,7 +1540,7 @@ async function szemelyLap(id) {
     const R = profilRender(P, id);
     const sz = P.szemely;
     app.innerHTML = `<p><a href="#" id="vissza">‹ Vissza a listához</a></p>
-      <div class="fejlec"><div><h2>${esc(R.nev)}</h2>${nevalakSor(P)}
+      <div class="fejlec"><div><h2>${esc(R.nev)} <span class="adatlap-letolt" style="font-size:.8rem;font-weight:400;margin-left:8px">Adatlap letöltése: <button class="btn small" data-letolt="pdf" title="Nyomtatási nézet – a nyomtatásnál válaszd a „Mentés PDF-ként” lehetőséget">PDF</button> <button class="btn small" data-letolt="word" title="Word-dokumentum (.doc)">Word</button> <button class="btn small" data-letolt="html" title="Önálló weboldal (.html)">HTML</button></span></h2>${nevalakSor(P)}
         ${R.elit ? '' : `<p><span class="badge b-gray">családtag</span> ${P.elittag ? `${esc(szerepNev((sz.eredetiazon2 || '').toLowerCase().replace(/_(\d+)$/, ' $1').replace(/_/g, ' ')))} – elittag: <a href="#szemely=${P.elittag.szemelyid}" data-szem="${P.elittag.szemelyid}">${esc(P.elittag.nev)}</a>` : ''}</p>`}
         <p class="muted">${R.szul ? esc(R.szul) : '?'}${P.reszletek && P.reszletek.halalev ? '–' + esc(ev(P.reszletek.halalev, R.szul)) : ''} · ${esc(sz.szuletesihely || '')} · SzemélyID: ${id}</p>
         <p class="small">Csoport: ${(csop || []).map(c => S.szerkEz
@@ -1497,6 +1554,7 @@ async function szemelyLap(id) {
       ${R.nyit.length ? `<div class="msg info">${R.nyit.length} nyitott kérdés: ${R.nyit.map(n => esc(n.tipus)).join(', ')}.</div>` : ''}
       ${R.tartalom.map(([k, cim, html, n]) => `<div id="sz-${k}"><section class="card szakasz"><h3>${esc(cim)}${n ? ` <span class="muted small">(${n})</span>` : ''}</h3>${
         S.szerkEz && SZAKASZ_SZERK[k] ? `<div class="szerk-gomb"><button class="btn" data-szakasz="${k}">Szerkesztés</button></div><div id="nezet-${k}">${html}</div><div id="urlap-${k}"></div>` : html}</section></div>`).join('')}`;
+    app.querySelectorAll('[data-letolt]').forEach(b => b.addEventListener('click', () => adatlapLetolt(b.dataset.letolt, P, R, id)));
     $('#vissza').addEventListener('click', e => { e.preventDefault(); if (S.csoportNav && S.csoportNav.ids.includes(id)) { valt('csoportok', false); csoportLap(S.csoportNav.cs, S.csoportNav.nezet); } else szemelyekLap(); });
     csoportSavKezel(id);
     szemLinkek(app);
