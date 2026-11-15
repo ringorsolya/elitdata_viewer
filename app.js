@@ -780,19 +780,31 @@ function profilRender(P, id) {
     { c: 'Tanítási nyelv', f: s => kod(s.tanitasinyelv) },
     { c: 'Végzettség', f: s => [s.vegzettseg_szoveg ? esc(s.vegzettseg_szoveg) : null, kod(s['vegzettségkod'])].filter(Boolean).join(' ') || null },
   ]);
-  const EGYEB = 'egyesületi és egyéb';
-  const karrierMunka = (P.karrier || []).filter(k => (k.tevekenyseg || 'fizetett munka') === 'fizetett munka'), karrierEgyeb = (P.karrier || []).filter(k => k.tevekenyseg === EGYEB);
-  P.karrier_egyeb = karrierEgyeb;
-  const tevGomb = (k, cel) => `<button class="btn small" data-tev="${k.karrierid}" data-cel="${cel}" title="${cel === EGYEB ? 'Áthelyezés az egyesületi és egyéb tevékenységek közé (nem fizetett munka)' : 'Áthelyezés a karrierbe (fizetett munka)'}">${cel === EGYEB ? '→ egyéb' : '→ karrier'}</button>`;
-  const egyeb = karrierEgyeb.length ? `<div class="tbl-wrap"><table id="egyeb-tbl"><thead><tr><th></th><th>Időszak</th><th>Tevékenység</th><th>Szervezet</th><th>Helyszín</th><th>Forrás</th><th>Kódolói jelölés</th><th></th></tr></thead><tbody>${
-    karrierEgyeb.map(k => `<tr><td style="white-space:nowrap">${tevGomb(k, 'fizetett munka')}</td><td>${idoszak(k.elsoev, k.utolsoev)}</td><td>${dash(k.foglalkozas)}</td><td class="small">${dash(k.munkahely)}</td><td class="small">${dash(k.helyszin)}</td><td>${forrasBadge(k.forras, k.fazis)}</td>
+  const EGYEB = 'egyesületi és egyéb', PENZ = 'egyéb pénzkereső tevékenység';
+  const karrierMunka = (P.karrier || []).filter(k => (k.tevekenyseg || 'fizetett munka') === 'fizetett munka'),
+    karrierEgyeb = (P.karrier || []).filter(k => k.tevekenyseg === EGYEB), karrierPenz = (P.karrier || []).filter(k => k.tevekenyseg === PENZ);
+  P.karrier_egyeb = karrierEgyeb; P.karrier_penz = karrierPenz;
+  const TEV_GOMB = {
+    [EGYEB]: ['→ egyéb', 'Áthelyezés az egyesületi és egyéb tevékenységek közé (egyesületi, közéleti tisztség, szerkesztőségi tagság stb.)'],
+    [PENZ]: ['→ pénzkereső', 'Áthelyezés az egyéb pénzkereső tevékenységek közé (másodállás jellegű munka, óraadás, megbízás stb.)'],
+    'fizetett munka': ['→ karrier', 'Visszahelyezés a karrierbe (fizetett munka, főállás)'],
+  };
+  const tevGomb = (k, cel) => `<button class="btn small" data-tev="${k.karrierid}" data-cel="${cel}" title="${TEV_GOMB[cel][1]}">${TEV_GOMB[cel][0]}</button>`;
+  const tevSzakasz = (sorok, nev, oszl, leiras, ures) => sorok.length ? `<div class="tbl-wrap"><table id="${nev}-tbl"><thead><tr><th></th><th>Időszak</th><th>${oszl[0]}</th><th>${oszl[1]}</th><th>Helyszín</th><th>Forrás</th><th>Kódolói jelölés</th><th></th></tr></thead><tbody>${
+    sorok.map(k => `<tr><td style="white-space:nowrap">${tevGomb(k, 'fizetett munka')}${k.tevekenyseg === EGYEB ? ' ' + tevGomb(k, PENZ) : ' ' + tevGomb(k, EGYEB)}</td><td>${idoszak(k.elsoev, k.utolsoev)}</td><td>${dash(k.foglalkozas)}</td><td class="small">${dash(k.munkahely)}</td><td class="small">${dash(k.helyszin)}</td><td>${forrasBadge(k.forras, k.fazis)}</td>
       <td class="small muted">${esc(k.harmonizalt || '')}</td><td style="white-space:nowrap"><button class="btn small" data-kj="${k.karrierid}">${S.szerkEz ? 'Javítás' : 'Besorolás'}</button></td></tr>`).join('')}</tbody></table></div>
-    <p class="small muted">Nem fizetett munka (egyesületi tisztség, igazgatósági tagság, szakértői megbízás stb.). Az áthelyezés kutatói döntés: forrással és időbélyeggel rögzül, és visszafordítható.</p><div id="detail-egyeb" style="margin-top:12px"></div>`
-    : '<p class="muted">Nincs ilyen tevékenység. A karrier táblában a „→ egyéb” gombbal helyezhetsz ide egy állomást, vagy a „Szerkesztés” gombbal vehetsz fel újat.</p>';
-  const karrier = karrierMunka.length ? `<div class="tbl-wrap"><p class="small muted" style="margin:0 0 6px">A sor elején lévő <b>→ egyéb</b> gombbal helyezhetsz át egy nem fizetett tevékenységet (egyesületi tisztség, igazgatósági tagság stb.) az „Egyesületi és egyéb tevékenység” blokkba, a <b>→ egyetemi pálya</b> gombbal pedig a tudományos előmenetelt (habilitáció, magántanárság, doktorátus, MTA-tagság) az „Egyetemi és akadémiai pálya” blokkba.</p><table id="kar-tbl"><thead><tr><th></th><th>Időszak</th><th>Foglalkozás</th><th>Munkahely</th><th>Helyszín</th><th>Forrás</th><th>Harmonizált</th><th>Hivatás1</th><th>Hivatás2</th><th>Specifikáció</th><th>Harm. forrás</th><th>Állapot</th><th></th></tr></thead><tbody>${
+    <p class="small muted">${leiras} Az áthelyezés kutatói döntés: forrással és időbélyeggel rögzül, és visszafordítható.</p><div id="detail-${nev}" style="margin-top:12px"></div>`
+    : `<p class="muted">${ures}</p>`;
+  const egyeb = tevSzakasz(karrierEgyeb, 'egyeb', ['Pozíció, tisztség', 'Egyesület, szervezet'],
+    'Nem fizetett munka: egyesületi és közéleti tisztség, igazgatósági tagság, tudományos vagy szakmai lap szerkesztőségében való részvétel stb.',
+    'Nincs ilyen tevékenység. A karrier táblában a „→ egyéb” gombbal helyezhetsz ide egy állomást, vagy a „Szerkesztés” gombbal vehetsz fel újat.');
+  const penz = tevSzakasz(karrierPenz, 'penz', ['Tevékenység', 'Munkaadó, megbízó'],
+    'Fizetett, de nem főállású, másodállás jellegű munka: óraadás, megbízás, félállás, tiszteletdíjas feladat stb. Időbeli pontosságra nem kell törekedni – a cél, hogy az információ ne vesszen el.',
+    'Nincs ilyen tevékenység. A karrier táblában a „→ pénzkereső” gombbal helyezhetsz ide egy állomást, vagy a „Szerkesztés” gombbal vehetsz fel újat.');
+  const karrier = karrierMunka.length ? `<div class="tbl-wrap"><p class="small muted" style="margin:0 0 6px">A sor elején lévő <b>→ egyéb</b> gombbal helyezhetsz át egy nem fizetett tevékenységet (egyesületi tisztség, igazgatósági tagság stb.) az „Egyesületi és egyéb tevékenység” blokkba, a <b>→ pénzkereső</b> gombbal a másodállás jellegű fizetett munkát (óraadás, megbízás stb.) az „Egyéb pénzkereső tevékenység” blokkba, a <b>→ egyetemi pálya</b> gombbal pedig a tudományos előmenetelt (habilitáció, magántanárság, doktorátus, MTA-tagság) az „Egyetemi és akadémiai pálya” blokkba.</p><table id="kar-tbl"><thead><tr><th></th><th>Időszak</th><th>Foglalkozás</th><th>Munkahely</th><th>Helyszín</th><th>Forrás</th><th>Harmonizált</th><th>Hivatás1</th><th>Hivatás2</th><th>Specifikáció</th><th>Harm. forrás</th><th>Állapot</th><th></th></tr></thead><tbody>${
     karrierMunka.map(k => { const jm = k.javitott_mezok || [], jv = m => jm.includes(m) ? ` <span class="muted small" title="Javított érték; eredetileg: ${esc(k.eredeti?.[m] ?? '—')}">*</span>` : '';
       const evJav = jm.includes('elsoev') || jm.includes('utolsoev');
-      return `<tr class="click" ${k.harm_id ? `data-h="${k.harm_id}"` : `data-kjsor="${k.karrierid}" title="Kattints a besoroláshoz"`}><td style="white-space:nowrap">${tevGomb(k, EGYEB)}${S.szerkEz ? ` <button class="btn small" data-akad="${k.karrierid}" data-fogl="${esc(k.foglalkozas || '')}" title="Áthelyezés az Egyetemi és akadémiai pálya blokkba (habilitáció, doktorátus, kinevezés, MTA-tagság stb.)">→ egyetemi pálya</button>` : ''}</td><td>${idoszak(k.elsoev, k.utolsoev)}${bizJel(k)}${evJav ? jv(jm.includes('elsoev') ? 'elsoev' : 'utolsoev') : (k.leiras && k.leiras.startsWith('? kód') ? ` <span class="badge b-warn">${esc(k.leiras)}</span>` : '')}</td>
+      return `<tr class="click" ${k.harm_id ? `data-h="${k.harm_id}"` : `data-kjsor="${k.karrierid}" title="Kattints a besoroláshoz"`}><td style="white-space:nowrap">${tevGomb(k, EGYEB)} ${tevGomb(k, PENZ)}${S.szerkEz ? ` <button class="btn small" data-akad="${k.karrierid}" data-fogl="${esc(k.foglalkozas || '')}" title="Áthelyezés az Egyetemi és akadémiai pálya blokkba (habilitáció, doktorátus, kinevezés, MTA-tagság stb.)">→ egyetemi pálya</button>` : ''}</td><td>${idoszak(k.elsoev, k.utolsoev)}${bizJel(k)}${evJav ? jv(jm.includes('elsoev') ? 'elsoev' : 'utolsoev') : (k.leiras && k.leiras.startsWith('? kód') ? ` <span class="badge b-warn">${esc(k.leiras)}</span>` : '')}</td>
       <td>${dash(k.foglalkozas)}${jv('foglalkozas')}</td><td class="small">${dash(k.munkahely)}${jv('munkahely')}</td><td class="small">${dash(k.helyszin)}${jv('helyszin')}</td><td>${forrasBadge(k.forras, k.fazis)}</td>
       ${k.harm_id ? `<td>${harmF(k, 'harmonizalt')}</td><td>${harmF(k, 'hivatas1')}</td><td>${harmF(k, 'hivatas2')}</td><td class="small">${k.hivatas_szemelytol && k.specifikacio ? szemHiv(k.specifikacio) : esc(k.specifikacio || '')}</td>
       <td>${forrasBadge(k.harm_forras || 'ElitData2026', 'ElitData2026')}</td><td>${allapotBadge(k.harm_allapot)}</td>` : `${NEMHARM(1)}<td>${szemHiv(k.hivatas1)}</td><td>${szemHiv(k.hivatas2)}</td><td class="small">${szemHiv(k.specifikacio)}</td><td></td><td></td>`}<td style="white-space:nowrap"><button class="btn small" data-kj="${k.karrierid}">${S.szerkEz ? 'Javítás' : 'Besorolás'}</button></td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Nincs karrieradat.</p>';
@@ -900,6 +912,7 @@ function profilRender(P, id) {
     ['tanulmanyok', 'Tanulmányok', tanul, db(P.tanulmanyok)],
     ['karrier', 'Karrier és harmonizáció', hivBox + karrier + (db(P.karrierpoziciok) ? '<h4>Karrierpozíciók</h4>' + karrierpoz : '') + '<div id="detail" style="margin-top:12px"></div>', karrierMunka.length],
     ['egyeb', 'Egyesületi és egyéb tevékenység', egyeb, karrierEgyeb.length],
+    ['penz', 'Egyéb pénzkereső tevékenység', penz, karrierPenz.length],
     ['akademiai', 'Egyetemi és akadémiai pálya', akademiai, db(P.akademiai)],
     ['kituntetes', 'Kitüntetések, díjak, címek', kituntetes || '<p class="muted">Nincs adat.</p>'],
     ['szervezet', 'Szervezeti tagság', szerv || '<p class="muted">Nincs adat.</p>'],
@@ -1213,6 +1226,7 @@ const LISTA = {
   haztartas: ['tbl_haztartas_tagok', 'Háztartás'], foglalkozasok: ['tbl_foglalkozasok', 'Foglalkozások'],
   akademiai: ['tbl_akademiai_palya', 'Egyetemi és akadémiai pálya'],
   karrier_egyeb: ['tbl_karrier', 'Egyesületi és egyéb tevékenység'],
+  karrier_penz: ['tbl_karrier', 'Egyéb pénzkereső tevékenység'],
 };
 const PK = { tbl_karrier: 'karrierid', tbl_vallas: 'vallasid', tbl_nemesseg: 'nemessegid', tbl_nevvaltoztatasok: 'nevvaltoztatasid', tbl_tanulmanyok: 'tanulmanyid',
   tbl_csaladi_kapcsolatok_kodolt: 'kapcsolatid', tbl_foglalkozasok: 'foglalkozasid', tbl_katonaiszolgalat: 'katonaiid', tbl_kulfolditartozkodasok: 'tartoskodasid',
@@ -1231,6 +1245,7 @@ const SZAKASZ_SZERK = {
   katonai: { listak: ['katonai'] }, kulfold: { listak: ['kulfold'] }, vagyon: { listak: ['vagyon', 'lakas', 'haztartas'] },
   foglalkozasok: { listak: ['foglalkozasok'] }, akademiai: { listak: ['akademiai'] },
   egyeb: { listak: ['karrier_egyeb'] },
+  penz: { listak: ['karrier_penz'] },
 };
 // főnemesi rang kódjai (KIG): az adatokból azonosítva (pl. 1: Esterházy Miklós herceg, 2: Bethlen István gróf, 3: Wlassics Gyula báró)
 const FONEMES = [['0', 'nem főnemes'], ['1', 'herceg / főherceg'], ['2', 'gróf'], ['3', 'báró'], ['4', 'egyéb (4-es kód, jelentése bizonytalan)']];
@@ -1361,11 +1376,17 @@ function mezoHtml(m, cim, tip, v, szul) {
   return `<label data-m="${esc(m)}" data-tip="${tip}" data-eredeti="${esc(eredeti)}">${esc(cim)}${bevitel(tip, v, szul)}</label>`;
 }
 // egy sor kártyája: a kitöltött mezők látszanak, az üresek lenyithatók
+// a karrier táblát használó, de más tartalmú listák saját mezőcímkéi és tevékenységtípusa
+const LISTA_CIMKE = {
+  karrier_egyeb: { foglalkozas: 'Pozíció, tisztség (pl. elnök, igazgatósági tag)', munkahely: 'Egyesület, szervezet', helyszin: 'Helyszín (település)' },
+  karrier_penz: { foglalkozas: 'Tevékenység (pl. óraadó, jogtanácsos, szerkesztő)', munkahely: 'Munkaadó, megbízó', helyszin: 'Helyszín (település)' },
+};
+const LISTA_TEV = { karrier_egyeb: 'egyesületi és egyéb', karrier_penz: 'egyéb pénzkereső tevékenység' };
 function sorKartya(tabla, oszl, row, szul, opts = {}) {
   const uj = !row;
   const mezok = oszl.map(m => ({ m, tip: mezoTipus(tabla, m), v: row ? row[m] : null }));
   const tele = mezok.filter(x => x.v !== null && x.v !== undefined && x.v !== ''), ures = mezok.filter(x => !tele.includes(x));
-  const html = a => a.map(x => mezoHtml(x.m, cimke(x.m), x.tip, x.v, szul)).join('');
+  const html = a => a.map(x => mezoHtml(x.m, (opts.cimkek && opts.cimkek[x.m]) || cimke(x.m), x.tip, x.v, szul)).join('');
   const J = (opts.javitasok || []);
   return `<div class="sor-kartya ${uj ? 'uj' : ''}" data-tabla="${tabla}" data-id="${uj ? '' : esc(row[pk(tabla)])}" data-szemely="${opts.szemely || ''}">
     ${opts.fejlec ? `<div class="sor-fej">${opts.fejlec}</div>` : ''}
@@ -1422,7 +1443,7 @@ async function szakaszSzerk(P, id, k) {
   if (k === 'kituntetes') h += '<p class="msg info small">Új kitüntetésnél elég magát a kitüntetést megadni: a kódlistáról, vagy ha nincs rajta, a nevével. Az év és a többi mező nem kötelező, a sorszám automatikus. A forrást a lap alján kell megadni.</p>';
   for (const key of def.listak) {
     const [tabla, cim] = LISTA[key], oszl = oszlopok(tabla);
-    h += `<h4>${esc(cim)}</h4><div data-lista="${key}">${(P[key] || []).map(row => sorKartya(tabla, oszl, row, szul, { szemely: id, javitasok: jOf(tabla, row[pk(tabla)]) })).join('') || '<p class="muted small">Nincs sor.</p>'}</div>
+    h += `<h4>${esc(cim)}</h4><div data-lista="${key}">${(P[key] || []).map(row => sorKartya(tabla, oszl, row, szul, { szemely: id, javitasok: jOf(tabla, row[pk(tabla)]), cimkek: LISTA_CIMKE[key] })).join('') || '<p class="muted small">Nincs sor.</p>'}</div>
       <button type="button" class="btn small" data-uj-sor="${key}">+ Új sor: ${esc(cim.toLowerCase())}</button>`;
   }
   box.innerHTML = `<form class="form" id="szf-${k}">${h}${forrasValaszto('sf' + k)}
@@ -1433,8 +1454,8 @@ async function szakaszSzerk(P, id, k) {
     const t = e.target;
     if (t.dataset.ujSor !== undefined && t.dataset.ujSor) {
       const [tabla] = LISTA[t.dataset.ujSor]; const lista = f.querySelector(`[data-lista="${t.dataset.ujSor}"]`);
-      lista.querySelector('p.muted')?.remove(); lista.insertAdjacentHTML('beforeend', sorKartya(tabla, oszlopok(tabla), null, szul, { szemely: id }));
-      if (t.dataset.ujSor === 'karrier_egyeb') lista.lastElementChild.dataset.egyeb = '1';
+      lista.querySelector('p.muted')?.remove(); lista.insertAdjacentHTML('beforeend', sorKartya(tabla, oszlopok(tabla), null, szul, { szemely: id, cimkek: LISTA_CIMKE[t.dataset.ujSor] }));
+      if (LISTA_TEV[t.dataset.ujSor]) lista.lastElementChild.dataset.tevCel = LISTA_TEV[t.dataset.ujSor];
     } else if (t.dataset.ujFogl) {
       t.previousElementSibling.insertAdjacentHTML('beforeend', sorKartya('tbl_foglalkozasok', ['idopontkod', 'foglalkozas'], null, szul, { szemely: t.dataset.ujFogl }));
     } else if (t.dataset.ujRokon !== undefined) {
@@ -1495,7 +1516,7 @@ async function szakaszSzerk(P, id, k) {
             const max = Math.max(0, ...(P[key] || []).map(r => Number(r.sorszam) || 0), ...[...f.querySelectorAll('.sor-kartya.uj[data-tabla="' + tabla + '"]')].map(x => Number(x.dataset.sorszam) || 0));
             c.dataset.sorszam = max + 1; o.sorszam = String(max + 1);
           }
-          if (Object.keys(o).length) muveletek.push(['sor_uj', { p_tabla: tabla, p_szemelyid: Number(c.dataset.szemely), p_ertekek: o }, null, c.dataset.egyeb === '1']);
+          if (Object.keys(o).length) muveletek.push(['sor_uj', { p_tabla: tabla, p_szemelyid: Number(c.dataset.szemely), p_ertekek: o }, null, c.dataset.tevCel || null]);
           return;
         }
         if (c.querySelector(':scope > .sor-lab [data-torles]')?.checked) { muveletek.push(['javit_sor', { p_tabla: tabla, p_rekord_id: Number(c.dataset.id), p_valtozasok: { _torles: '1' } }]); return; }
@@ -1511,7 +1532,7 @@ async function szakaszSzerk(P, id, k) {
         a.p_hivatkozas = hiv; a.p_megjegyzes = megj;
         const { data } = await q(sb.rpc(fn, a));
         // az egyesületi és egyéb tevékenységként felvett új sor rögtön oda kerül
-        if (egyebbe && data) await q(sb.rpc('karrier_tevekenyseg', { p_karrierid: Number(data), p_tipus: 'egyesületi és egyéb', p_megjegyzes: megj }));
+        if (egyebbe && data) await q(sb.rpc('karrier_tevekenyseg', { p_karrierid: Number(data), p_tipus: egyebbe, p_megjegyzes: megj }));
         if (fn === 'rokon_uj' && fogl) await q(sb.rpc('sor_uj', { p_tabla: 'tbl_foglalkozasok', p_szemelyid: data, p_ertekek: { idopontkod: 'alap', foglalkozas: fogl }, p_forras_id: fid, p_hivatkozas: hiv, p_megjegyzes: megj }));
         n++;
       }
@@ -1607,13 +1628,13 @@ async function szemelyLap(id) {
     app.querySelectorAll('[data-tev]').forEach(b => b.addEventListener('click', async e => {
       e.stopPropagation(); b.disabled = true;
       try { await q(sb.rpc('karrier_tevekenyseg', { p_karrierid: Number(b.dataset.tev), p_tipus: b.dataset.cel, p_megjegyzes: null }));
-        await szemelyLap(id); $(b.dataset.cel === 'egyesületi és egyéb' ? '#sz-egyeb' : '#sz-karrier')?.scrollIntoView();
+        await szemelyLap(id); $({ 'egyesületi és egyéb': '#sz-egyeb', 'egyéb pénzkereső tevékenység': '#sz-penz' }[b.dataset.cel] || '#sz-karrier')?.scrollIntoView();
       } catch (err) { b.disabled = false; alert('Hiba: ' + hibaSzoveg(err)); }
     }));
-    $('#egyeb-tbl tbody')?.addEventListener('click', e => {
+    ['egyeb', 'penz'].forEach(nev => $(`#${nev}-tbl tbody`)?.addEventListener('click', e => {
       const kb = e.target.closest('[data-kj]'); if (!kb) return;
-      karrierSzerk(Number(kb.dataset.kj), $('#detail-egyeb'), () => szemelyLap(id).then(() => $('#sz-egyeb')?.scrollIntoView())).catch(err => hibaKiir($('#detail-egyeb'), err));
-    });
+      karrierSzerk(Number(kb.dataset.kj), $(`#detail-${nev}`), () => szemelyLap(id).then(() => $(`#sz-${nev}`)?.scrollIntoView())).catch(err => hibaKiir($(`#detail-${nev}`), err));
+    }));
     $('#kar-tbl tbody')?.addEventListener('click', e => {
       if (e.target.closest('button, a, input, select')) { if (!e.target.closest('[data-kj]')) return; }
       const kb = e.target.closest('[data-kj]') || (!e.target.closest('tr[data-h]') && e.target.closest('tr[data-kjsor]'));
