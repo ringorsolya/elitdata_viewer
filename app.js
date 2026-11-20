@@ -202,7 +202,11 @@ async function nyitottLap() {
     const chips = $('#ny-chips');
     let lezartDb = 0;
     try { const { count: lc } = await q(sb.from('tbl_ellenorzendo').select('ellenorzes_id', { count: 'exact', head: true }).neq('allapot', 'nyitott')); lezartDb = lc || 0; } catch (e) { }
-    const rajz = () => { chips.innerHTML = (TIPUSOK.map((t, i) => counts[i].count ? `<span class="chip ${st.tipus === t ? 'on' : ''}" data-t="${esc(t)}">${esc(t)}<b>${counts[i].count}</b></span>` : '').join('') || '<span class="muted">Nincs nyitott kérdés.</span>')
+    // a besorolatlan állomásoknál egy tétel = egy személy; az állomások számát külön mutatjuk, mert az csökken soronként
+    let besorSorok = null;
+    try { const { data: bs } = await q(sb.from('v_dontesre_var').select('erintett_sorok').eq('tipus', 'besorolatlan állomás').range(0, 9999)); besorSorok = (bs || []).reduce((a, r) => a + Number(r.erintett_sorok || 0), 0); } catch (e) { }
+    const chipSzam = (t, n) => t === 'besorolatlan állomás' && besorSorok !== null ? `<b title="${n} személynél összesen ${besorSorok} besorolatlan karrierállomás">${n} fő · ${besorSorok} állomás</b>` : `<b>${n}</b>`;
+    const rajz = () => { chips.innerHTML = (TIPUSOK.map((t, i) => counts[i].count ? `<span class="chip ${st.tipus === t ? 'on' : ''}" data-t="${esc(t)}">${esc(t)}${chipSzam(t, counts[i].count)}</span>` : '').join('') || '<span class="muted">Nincs nyitott kérdés.</span>')
       + (lezartDb ? ` <span class="chip ${st.tipus === LEZART ? 'on' : ''}" data-t="${LEZART}" title="Megválaszolt (megoldott vagy elvetett) kódolói és ellenőrzési kérdések – visszanézhetők, újranyithatók">✓ lezárt kérdések<b>${lezartDb}</b></span>` : ''); };
     rajz();
     chips.addEventListener('click', e => { const c = e.target.closest('.chip'); if (!c) return; st.tipus = c.dataset.t; st.page = 0; rajz(); lista(); });
@@ -871,9 +875,9 @@ function profilRender(P, id) {
     'fizetett munka': ['→ karrier', 'Visszahelyezés a karrierbe (fizetett munka, főállás)'],
   };
   const tevGomb = (k, cel) => `<button class="btn small" data-tev="${k.karrierid}" data-cel="${cel}" title="${TEV_GOMB[cel][1]}">${TEV_GOMB[cel][0]}</button>`;
-  const tevSzakasz = (sorok, nev, oszl, leiras, ures) => sorok.length ? `<div class="tbl-wrap"><table id="${nev}-tbl"><thead><tr><th></th><th>Időszak</th><th>${oszl[0]}</th><th>${oszl[1]}</th><th>Helyszín</th><th>Forrás</th><th>Kódolói jelölés</th><th></th></tr></thead><tbody>${
+  const tevSzakasz = (sorok, nev, oszl, leiras, ures) => sorok.length ? `<div class="tbl-wrap"><table id="${nev}-tbl"><thead><tr><th></th><th>Időszak</th><th>${oszl[0]}</th><th>${oszl[1]}</th><th>Helyszín</th><th>Forrás</th><th>Kódolói jelölés</th><th>Megjegyzés</th><th></th></tr></thead><tbody>${
     sorok.map(k => `<tr><td style="white-space:nowrap">${tevGomb(k, 'fizetett munka')}${k.tevekenyseg === EGYEB ? ' ' + tevGomb(k, PENZ) : ' ' + tevGomb(k, EGYEB)}</td><td>${idoszak(k.elsoev, k.utolsoev)}</td><td>${dash(k.foglalkozas)}</td><td class="small">${dash(k.munkahely)}</td><td class="small">${dash(k.helyszin)}</td><td>${forrasBadge(k.forras, k.fazis)}</td>
-      <td class="small muted">${esc(k.harmonizalt || '')}</td><td style="white-space:nowrap"><button class="btn small" data-kj="${k.karrierid}">${S.szerkEz ? 'Javítás' : 'Besorolás'}</button></td></tr>`).join('')}</tbody></table></div>
+      <td class="small muted">${esc(k.harmonizalt || '')}</td><td class="small">${esc(k.tevekenyseg_megjegyzes || '')}</td><td style="white-space:nowrap"><button class="btn small" data-kj="${k.karrierid}">${S.szerkEz ? 'Javítás' : 'Besorolás'}</button></td></tr>`).join('')}</tbody></table></div>
     <p class="small muted">${leiras} Az áthelyezés kutatói döntés: forrással és időbélyeggel rögzül, és visszafordítható.</p><div id="detail-${nev}" style="margin-top:12px"></div>`
     : `<p class="muted">${ures}</p>`;
   const egyeb = tevSzakasz(karrierEgyeb, 'egyeb', ['Pozíció, tisztség', 'Egyesület, szervezet'],
@@ -1486,6 +1490,7 @@ function sorKartya(tabla, oszl, row, szul, opts = {}) {
   return `<div class="sor-kartya ${uj ? 'uj' : ''}" data-tabla="${tabla}" data-id="${uj ? '' : esc(row[pk(tabla)])}" data-szemely="${opts.szemely || ''}">
     ${opts.fejlec ? `<div class="sor-fej">${opts.fejlec}</div>` : ''}
     <div class="szerk-racs">${uj && mezok.length <= 14 ? html(mezok) : html(tele)}</div>
+    ${!uj && opts.tevTipus ? `<label class="tev-megj" data-tevmegj="${esc(opts.tevTipus)}" data-eredeti="${esc(row.tevekenyseg_megjegyzes || '')}">Megjegyzés az áthelyezéshez <span class="muted small">(miért került ide, mi pontosan a tevékenység; önmagában is menthető, forrás nélkül)</span><textarea rows="2">${esc(row.tevekenyseg_megjegyzes || '')}</textarea></label>` : ''}
     ${!(uj && mezok.length <= 14) && ures.length ? `<details ${uj ? 'open' : ''}><summary class="small muted">${uj ? 'Mezők' : `Üres mezők (${ures.length})`}</summary><div class="szerk-racs">${html(ures)}</div></details>` : ''}
     ${J.length ? `<div class="small muted">Javítások: ${J.map(j => `${esc(cimke(j.mezo === '_torles' ? 'törlés' : j.mezo))}${j.mezo === '_torles' ? '' : ' → ' + esc(j.ertek ?? '—')} <span>(${esc(j.rogzitette || '')})</span>${j.elfogadott === false ? ' <i>visszavonva</i>' : ` <button type="button" class="btn small" data-sv="${j.javitas_id}">Visszavonás</button>`}`).join(' · ')}</div>` : ''}
     <div class="sor-lab">${uj ? '<button type="button" class="btn small" data-elvet>Mégse</button>' : '<label class="torles"><input type="checkbox" data-torles> Sor törlése</label>'}</div>
@@ -1538,7 +1543,7 @@ async function szakaszSzerk(P, id, k) {
   if (k === 'kituntetes') h += '<p class="msg info small">Új kitüntetésnél elég magát a kitüntetést megadni: a kódlistáról, vagy ha nincs rajta, a nevével. Az év és a többi mező nem kötelező, a sorszám automatikus. A forrást a lap alján kell megadni.</p>';
   for (const key of def.listak) {
     const [tabla, cim] = LISTA[key], oszl = oszlopok(tabla);
-    h += `<h4>${esc(cim)}</h4><div data-lista="${key}">${(P[key] || []).map(row => sorKartya(tabla, oszl, row, szul, { szemely: id, javitasok: jOf(tabla, row[pk(tabla)]), cimkek: LISTA_CIMKE[key] })).join('') || '<p class="muted small">Nincs sor.</p>'}</div>
+    h += `<h4>${esc(cim)}</h4><div data-lista="${key}">${(P[key] || []).map(row => sorKartya(tabla, oszl, row, szul, { szemely: id, javitasok: jOf(tabla, row[pk(tabla)]), cimkek: LISTA_CIMKE[key], tevTipus: LISTA_TEV[key] })).join('') || '<p class="muted small">Nincs sor.</p>'}</div>
       <button type="button" class="btn small" data-uj-sor="${key}">+ Új sor: ${esc(cim.toLowerCase())}</button>`;
   }
   box.innerHTML = `<form class="form" id="szf-${k}">${h}${forrasValaszto('sf' + k)}
@@ -1618,10 +1623,25 @@ async function szakaszSzerk(P, id, k) {
         const o = ertekek(c, true);
         if (Object.keys(o).length) muveletek.push(['javit_sor', { p_tabla: tabla, p_rekord_id: Number(c.dataset.id), p_valtozasok: o }]);
       });
-      if (!muveletek.length) { msg(uz, 'Nem változott semmi.', 'info'); return; }
+      // az áthelyezett (egyesületi / pénzkereső) sorok megjegyzése: forrás nélkül menthető
+      const tevMegj = [];
+      f.querySelectorAll('.sor-kartya[data-tabla] > label[data-tevmegj]').forEach(l => {
+        const c = l.closest('.sor-kartya'); if (c.querySelector(':scope > .sor-lab [data-torles]')?.checked) return;
+        const v = l.querySelector('textarea').value.trim();
+        if (v !== l.dataset.eredeti) tevMegj.push({ p_karrierid: Number(c.dataset.id), p_tipus: l.dataset.tevmegj, p_megjegyzes: v || null });
+      });
+      if (!muveletek.length && !tevMegj.length) {
+        const lentiMegj = ($('#sf' + k + '-megj')?.value || '').trim();
+        msg(uz, lentiMegj
+          ? 'Nem változott semmi. A lap alján lévő „Megjegyzés” a módosítás indoklása, önmagában nem menthető. A sorhoz tartozó megjegyzést a sor saját mezőjébe írd: áthelyezett karriersornál a „Megjegyzés az áthelyezéshez”, egyetemi és akadémiai pályánál a „Megjegyzés” mezőbe (ha üres, az „Üres mezők” alatt találod).'
+          : 'Nem változott semmi.', 'info');
+        return;
+      }
       btn.disabled = true;
-      const fid = await forrasAzonosito('sf' + k), hiv = $('#sf' + k + '-hiv').value || null, megj = $('#sf' + k + '-megj').value || null;
       let n = 0;
+      for (const a of tevMegj) { await q(sb.rpc('karrier_tevekenyseg', a)); n++; }
+      if (!muveletek.length) { msg(uz, `${n} megjegyzés rögzítve.`, 'ok'); setTimeout(() => szemelyLap(id).then(() => $('#sz-' + k)?.scrollIntoView()), 700); return; }
+      const fid = await forrasAzonosito('sf' + k), hiv = $('#sf' + k + '-hiv').value || null, megj = $('#sf' + k + '-megj').value || null;
       for (const [fn, args, fogl, egyebbe] of muveletek) {
         const a = { ...args, p_forras_id: fid };
         a.p_hivatkozas = hiv; a.p_megjegyzes = megj;
