@@ -1215,7 +1215,7 @@ function adatlapHtml(P, R, id) {
   const halal = P.reszletek && P.reszletek.halalev ? '–' + esc(ev(P.reszletek.halalev, R.szul)) : '';
   const datum = new Date().toLocaleDateString('hu-HU');
   return `<!DOCTYPE html><html lang="hu"><head><meta charset="utf-8"><title>${esc(R.nev)} – ElitData adatlap</title><style>${ADATLAP_CSS}</style></head><body>
-    <h1>${esc(R.nev)}</h1>${nevalakSor(P)}
+    <h1>${esc(R.nev)}</h1>${nevalakSor(P)}${bekerulesBlokk(P)}
     <div class="fej-meta">${R.szul ? esc(R.szul) : '?'}${halal}${sz.szuletesihely ? ' · ' + esc(sz.szuletesihely) : ''} · ${R.elit ? 'elittag' : 'családtag' + (P.elittag ? ' – elittag: ' + esc(P.elittag.nev) : '')} · SzemélyID: ${id}</div>
     ${tmp.innerHTML}
     <p class="lab-lab">ElitData – adatlap, letöltve: ${datum}. Forrásjelölés: KIG = KIG-féle kutatás, ElitData2026 = 2026-os adatgyűjtés; „kód N” = a kód jelentése a KIG-kódkönyvből pótlandó.</p>
@@ -1301,6 +1301,17 @@ function alapSzerkeszt(P, id) {
   });
 }
 
+// a fejléc alatt: bekerülési pozíció – mely pozíció(k) miatt szerepel a személy az egyes mintaévek elitlistáján
+const MINTAEVEK = [1928, 1938, 1942];
+function bekerulesBlokk(P) {
+  const b = P.bekerules || [];
+  if (!b.length) return '';
+  const evek = [...new Set([...MINTAEVEK, ...b.map(r => r.mintaev)])].sort((x, y) => (x ?? 9999) - (y ?? 9999));
+  const sor = ev => { const t = b.filter(r => r.mintaev === ev);
+    if (!t.length && !MINTAEVEK.includes(ev)) return '';
+    return `<tr><th style="white-space:nowrap;text-align:left;padding-right:10px">${ev ?? 'év nélkül'}</th><td>${t.length ? t.map(r => `${esc(r.int_poz_standard)}${r.media ? ' <span class="badge b-gray" title="Az Excel „Média” oszlopában jelölve">média</span>' : ''}`).join('; ') : '<span class="muted">—</span>'}</td></tr>`; };
+  return `<div class="bekerules" style="margin:4px 0 10px"><div class="small muted" title="Az a pozíció, amely miatt a személy az adott mintaév elitlistáján szerepel (lista_poziciok_harmonizalt_v4_1.xlsx)">Bekerülési pozíció</div><table class="small" style="width:auto">${evek.map(sor).join('')}</table></div>`;
+}
 // a fejléc alatt: a személy többi névalakja (születési/leánykori név, névváltoztatás stb.)
 function nevalakSor(P) {
   const a = (P.nevvaltoztatasok || []).filter(n => n.nevalak_vezeteknev || n.nevalak_keresztnev);
@@ -1664,6 +1675,8 @@ async function szemelyLap(id) {
     await kodtablak(); await kodok();
     const { data: P } = await q(sb.rpc('szemely_osszes', { p_id: id }));
     if (!P || !P.szemely) { app.innerHTML = '<div class="empty">Nincs ilyen személy.</div>'; return; }
+    // bekerülési pozíciók (mintaévenként); bejelentkezés nélkül üres
+    try { const { data: bp } = await sb.from('tbl_bekerulesi_pozicio').select('mintaev,int_poz_standard,media,intezmeny,pozicio').eq('szemelyid', id).or('elfogadott.is.null,elfogadott.eq.true').order('mintaev').order('bpid'); P.bekerules = bp || []; } catch (e) { P.bekerules = []; }
     S.szerkCache.delete(id);
     S.szerkEz = await szerkHet(id);
     const [{ data: csop }, { data: tagsag }] = await Promise.all([
@@ -1676,7 +1689,7 @@ async function szemelyLap(id) {
     const R = profilRender(P, id);
     const sz = P.szemely;
     app.innerHTML = `<p><a href="#" id="vissza">‹ Vissza a listához</a></p>
-      <div class="fejlec"><div><h2>${esc(R.nev)} <span class="adatlap-letolt" style="font-size:.8rem;font-weight:400;margin-left:8px">Adatlap letöltése: <button class="btn small" data-letolt="pdf" title="Nyomtatási nézet – a nyomtatásnál válaszd a „Mentés PDF-ként” lehetőséget">PDF</button> <button class="btn small" data-letolt="word" title="Word-dokumentum (.doc)">Word</button> <button class="btn small" data-letolt="html" title="Önálló weboldal (.html)">HTML</button></span></h2>${nevalakSor(P)}
+      <div class="fejlec"><div><h2>${esc(R.nev)} <span class="adatlap-letolt" style="font-size:.8rem;font-weight:400;margin-left:8px">Adatlap letöltése: <button class="btn small" data-letolt="pdf" title="Nyomtatási nézet – a nyomtatásnál válaszd a „Mentés PDF-ként” lehetőséget">PDF</button> <button class="btn small" data-letolt="word" title="Word-dokumentum (.doc)">Word</button> <button class="btn small" data-letolt="html" title="Önálló weboldal (.html)">HTML</button></span></h2>${nevalakSor(P)}${bekerulesBlokk(P)}
         ${R.elit ? '' : `<p><span class="badge b-gray">családtag</span> ${P.elittag ? `${esc(szerepNev((sz.eredetiazon2 || '').toLowerCase().replace(/_(\d+)$/, ' $1').replace(/_/g, ' ')))} – elittag: <a href="#szemely=${P.elittag.szemelyid}" data-szem="${P.elittag.szemelyid}">${esc(P.elittag.nev)}</a>` : ''}</p>`}
         <p class="muted">${R.szul ? esc(R.szul) : '?'}${P.reszletek && P.reszletek.halalev ? '–' + esc(ev(P.reszletek.halalev, R.szul)) : ''} · ${esc(sz.szuletesihely || '')} · SzemélyID: ${id}</p>
         <p class="small">Csoport: ${(csop || []).map(c => S.szerkEz
